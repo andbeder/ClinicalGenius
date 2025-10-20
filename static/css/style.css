@@ -1,0 +1,197 @@
+body {
+    background-color: #f8f9fa;
+}
+
+.navbar-brand i {
+    font-size: 1.2em;
+}
+
+/* Field tags in sidebar */
+.field-tag {
+    background: #e9ecef;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #dee2e6;
+    margin-bottom: 8px;
+}
+
+.field-tag:hover {
+    background: #0d6efd;
+    color: white;
+    transform: translateX(5px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.field-tag .field-name {
+    font-weight: 600;
+    display: block;
+    font-family: 'Courier New', monospace;
+}
+
+.field-tag .field-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+}
+
+.field-tag:hover .field-label {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* Status messages */
+#connection-status,
+#records-info {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    display: none;
+    font-size: 0.875rem;
+}
+
+#connection-status.show,
+#records-info.show {
+    display: block;
+}
+
+#connection-status.alert-success,
+#records-info.alert-success {
+    background-color: #d1e7dd;
+    color: #0f5132;
+    border: 1px solid #badbcc;
+}
+
+#connection-status.alert-danger,
+#records-info.alert-danger {
+    background-color: #f8d7da;
+    color: #842029;
+    border: 1px solid #f5c2c7;
+}
+
+#connection-status.alert-info,
+#records-info.alert-info {
+    background-color: #cff4fc;
+    color: #055160;
+    border: 1px solid #b6effb;
+}
+
+/* Test results */
+#test-results,
+#batch-results {
+    display: none;
+}
+
+#test-results.show,
+#batch-results.show {
+    display: block;
+}
+
+.result-box {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+    border: 1px solid #dee2e6;
+}
+
+.result-box h3 {
+    font-size: 1.1rem;
+    margin-bottom: 0.75rem;
+    color: #495057;
+}
+
+.result-box pre {
+    background: white;
+    padding: 1rem;
+    border-radius: 0.375rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin-bottom: 0;
+    font-size: 0.875rem;
+    border: 1px solid #dee2e6;
+}
+
+/* Batch progress */
+#batch-progress {
+    display: none;
+}
+
+#batch-progress.show {
+    display: block;
+}
+
+.progress {
+    height: 2rem;
+}
+
+.progress-bar {
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Spinner */
+.spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 0.2rem solid rgba(13, 110, 253, 0.2);
+    border-radius: 50%;
+    border-top-color: #0d6efd;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Cards */
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+    border: none;
+}
+
+.card-header {
+    font-weight: 600;
+    border-bottom: none;
+}
+
+/* Scrollbar styling for fields container */
+.card-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.card-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.card-body::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.card-body::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Form elements */
+.form-control:focus,
+.form-select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Monospace font for prompt template */
+.font-monospace {
+    font-family: 'Courier New', Courier, monospace;
+}
+
+/* Loading state */
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}

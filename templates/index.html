@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthetic Claims Data Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-clipboard2-pulse"></i> Synthetic Claims Data Generator
+            </span>
+            <span class="navbar-text text-white">
+                AI-Powered Salesforce Data Generation
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3">
+                <!-- Configuration Card -->
+                <div class="card mb-3">
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-gear"></i> Configuration
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="llm-provider" class="form-label">LLM Provider</label>
+                            <select id="llm-provider" class="form-select">
+                                <option value="lmstudio">LM Studio (Local/Remote)</option>
+                                <option value="openai">OpenAI ChatGPT</option>
+                                <option value="copilot">Microsoft Copilot</option>
+                            </select>
+                        </div>
+                        <div class="mb-3" id="lm-endpoint-group">
+                            <label for="lm-endpoint" class="form-label">LM Studio Endpoint</label>
+                            <input type="text" id="lm-endpoint" class="form-control" placeholder="http://localhost:1234" value="http://localhost:1234">
+                        </div>
+                        <div class="row">
+                            <div class="col-6">
+                                <label for="temperature" class="form-label">Temperature</label>
+                                <input type="number" id="temperature" class="form-control" min="0" max="2" step="0.1" value="0.7">
+                            </div>
+                            <div class="col-6">
+                                <label for="max-tokens" class="form-label">Max Tokens</label>
+                                <input type="number" id="max-tokens" class="form-control" min="100" max="8000" step="100" value="4000">
+                            </div>
+                        </div>
+                        <button onclick="testConnection()" class="btn btn-outline-primary w-100 mt-3">
+                            <i class="bi bi-plug"></i> Test Connection
+                        </button>
+                        <div id="connection-status"></div>
+                    </div>
+                </div>
+
+                <!-- Salesforce Data Card -->
+                <div class="card mb-3">
+                    <div class="card-header bg-success text-white">
+                        <i class="bi bi-cloud"></i> Salesforce Data
+                    </div>
+                    <div class="card-body">
+                        <button onclick="loadFields()" class="btn btn-success w-100 mb-2">
+                            <i class="bi bi-arrow-repeat"></i> Load Fields
+                        </button>
+                        <button onclick="loadRecords()" class="btn btn-success w-100 mb-2">
+                            <i class="bi bi-table"></i> Load Records
+                        </button>
+                        <button onclick="createNewRecord()" class="btn btn-outline-success w-100">
+                            <i class="bi bi-plus-circle"></i> Create New Record
+                        </button>
+                        <div id="records-info" class="mt-3"></div>
+                    </div>
+                </div>
+
+                <!-- Available Fields Card -->
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-list-ul"></i> Available Fields
+                    </div>
+                    <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                        <div id="fields-container"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9">
+                <!-- Prompt Builder Card -->
+                <div class="card mb-3">
+                    <div class="card-header bg-dark text-white">
+                        <i class="bi bi-pencil-square"></i> Prompt Builder
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="target-field" class="form-label fw-bold">Target Field to Populate</label>
+                            <select id="target-field" class="form-select">
+                                <option value="">-- Select a field --</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="prompt-template" class="form-label fw-bold">Prompt Template</label>
+                            <textarea id="prompt-template" class="form-control font-monospace" rows="15"
+                                placeholder="Write your prompt here. Use {{Field_Name__c}} to reference other fields.
+
+Example for Medical Malpractice Claim Description:
+
+Generate a comprehensive medical malpractice claim description with the following details:
+
+Patient Name: {{Patient_Name__c}}
+Date of Incident: {{Incident_Date__c}}
+Medical Facility: {{Facility_Name__c}}
+Healthcare Provider: {{Provider_Name__c}}
+Type of Procedure: {{Procedure_Type__c}}
+Alleged Error: {{Alleged_Error__c}}
+Injury Sustained: {{Injury_Description__c}}
+
+Please provide a detailed 4-6 paragraph narrative that includes:
+1. Background of the patient and their medical history
+2. Detailed description of the incident and what went wrong
+3. The immediate and long-term consequences of the alleged malpractice
+4. Medical expert opinions and supporting evidence
+5. Impact on the patient's quality of life and ability to work
+6. Specific damages claimed (medical expenses, lost wages, pain and suffering)
+
+Write in a professional, clinical tone appropriate for legal documentation."></textarea>
+                        </div>
+                        <div class="alert alert-info" role="alert">
+                            <i class="bi bi-lightbulb"></i> <strong>Tip:</strong> Use <code>{{Field_API_Name__c}}</code> to insert values from other fields. Click on field names in the sidebar to insert them into your prompt.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Test Prompt Card -->
+                <div class="card mb-3">
+                    <div class="card-header bg-warning">
+                        <i class="bi bi-flask"></i> Test Prompt
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label for="test-record" class="form-label fw-bold">Select Record to Test</label>
+                                <select id="test-record" class="form-select">
+                                    <option value="">-- Select a record --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button onclick="testPrompt()" class="btn btn-warning w-100">
+                                    <i class="bi bi-play-circle"></i> Test Prompt
+                                </button>
+                            </div>
+                        </div>
+                        <div id="test-results"></div>
+                    </div>
+                </div>
+
+                <!-- Batch Execution Card -->
+                <div class="card mb-3">
+                    <div class="card-header bg-danger text-white">
+                        <i class="bi bi-rocket-takeoff"></i> Batch Execution
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Batch Mode</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="batchMode" id="batch-update" value="update" checked>
+                                <label class="form-check-label" for="batch-update">
+                                    <strong>Update Existing Records</strong><br>
+                                    <small class="text-muted">Update all existing Claim__c records</small>
+                                </label>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="radio" name="batchMode" id="batch-insert" value="insert">
+                                <label class="form-check-label" for="batch-insert">
+                                    <strong>Create New Records</strong><br>
+                                    <small class="text-muted">Create new Claim__c records with generated data</small>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3" id="insert-count-group" style="display: none;">
+                            <label for="insert-count" class="form-label">Number of Records to Create</label>
+                            <input type="number" id="insert-count" class="form-control" min="1" max="100" value="10">
+                        </div>
+
+                        <div class="alert alert-warning" role="alert">
+                            <i class="bi bi-exclamation-triangle"></i> <strong>Warning:</strong> This will generate AI content for records. Make sure you've tested your prompt first!
+                        </div>
+
+                        <button onclick="runBatchGeneration()" class="btn btn-danger btn-lg w-100">
+                            <i class="bi bi-lightning-charge"></i> Run Batch Generation
+                        </button>
+                        <div id="batch-progress" class="mt-3"></div>
+                        <div id="batch-results" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

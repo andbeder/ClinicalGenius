@@ -1,0 +1,79 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Encrypted keys and certificates
+*.key
+*.key.enc
+*.pem
+*.crt
+*.csr
+server.pass.key
+server.key
+server.crt
+server.pem
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules
+node_modules/
+package-lock.json
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+analysis_batches.db
+
+# CSV exports
+*.csv
+batch_*.csv
+
+# Salesforce
+.sfdx/
+.sf/
+.salesforce/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Documentation build
+docs/_build/
+site/

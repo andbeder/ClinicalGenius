@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clinical Genius - CRM Analytics Prompt Execution</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 sidebar bg-dark text-white p-3">
+                <h4 class="mb-4">Clinical Genius</h4>
+                <ul class="nav nav-pills flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-tab="analysis" href="#analysis">Analysis</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-tab="prompt-builder" href="#prompt-builder">Prompt Builder</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-tab="proving-ground" href="#proving-ground">Proving Ground</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-tab="batch-execution" href="#batch-execution">Batch Execution</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-tab="history" href="#history">History</a>
+                    </li>
+                </ul>
+                <hr class="my-4">
+                <div class="text-muted small">
+                    <div id="connection-status">
+                        <span class="badge bg-secondary">Not Connected</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 main-content p-4">
+                <!-- Analysis Tab -->
+                <div id="analysis-tab" class="tab-content active">
+                    <h2 class="mb-4">Analysis Dashboard</h2>
+
+                    <!-- Dataset Selection -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">CRM Analytics Datasets</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <label for="dataset-select" class="form-label">Select Dataset:</label>
+                                    <select id="dataset-select" class="form-select">
+                                        <option value="">-- Choose a dataset --</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button id="refresh-datasets-btn" class="btn btn-outline-primary w-100">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+                                            <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                                            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+                                        </svg>
+                                        Refresh Datasets
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="dataset-info" class="mt-3" style="display: none;">
+                                <hr>
+                                <h6>Dataset Information:</h6>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>Name:</strong> <span id="dataset-name"></span></p>
+                                        <p><strong>API Name:</strong> <span id="dataset-api-name"></span></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p><strong>Row Count:</strong> <span id="dataset-rows"></span></p>
+                                        <p><strong>Last Modified:</strong> <span id="dataset-modified"></span></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Analysis Batches -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Recent Analysis Batches</h5>
+                            <button id="create-batch-btn" class="btn btn-light btn-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-circle" viewBox="0 0 16 16">
+                                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                                </svg>
+                                New Analysis
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="batches-loading" class="text-center py-3">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                            <div id="batches-list" style="display: none;">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Batch Name</th>
+                                            <th>Dataset</th>
+                                            <th>Status</th>
+                                            <th>Records</th>
+                                            <th>Created</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="batches-tbody">
+                                        <!-- Populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div id="no-batches" style="display: none;">
+                                <p class="text-muted text-center py-3">No analysis batches found. Click "New Analysis" to create one.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Prompt Builder Tab -->
+                <div id="prompt-builder-tab" class="tab-content" style="display: none;">
+                    <h2 class="mb-4">Prompt Builder</h2>
+
+                    <!-- Analysis Batch Selection -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">Select Analysis Batch</h5>
+                        </div>
+                        <div class="card-body">
+                            <select id="prompt-batch-select" class="form-select">
+                                <option value="">-- Select an analysis batch --</option>
+                            </select>
+                            <div id="prompt-batch-info" class="mt-3" style="display: none;">
+                                <p class="mb-1"><strong>Dataset:</strong> <span id="prompt-dataset-name"></span></p>
+                                <p class="mb-0"><strong>Status:</strong> <span id="prompt-batch-status"></span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dataset Fields Selection -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0">Dataset Fields</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">Select fields to include in your prompt context. Click a field to insert it into your prompt as <code>{{field_name}}</code></p>
+                            <div id="dataset-fields-loading" class="text-center py-3">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                            <div id="dataset-fields-container" style="display: none;">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6>Dimensions (Text Fields)</h6>
+                                        <div id="dimension-fields" class="field-list">
+                                            <!-- Populated by JavaScript -->
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6>Measures (Numeric Fields)</h6>
+                                        <div id="measure-fields" class="field-list">
+                                            <!-- Populated by JavaScript -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="no-batch-selected" class="text-muted text-center py-3">
+                                Please select an analysis batch to load dataset fields.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Prompt Template Editor -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0">Prompt Template</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">Write your prompt template using <code>{{field_name}}</code> syntax to reference dataset fields.</p>
+                            <textarea id="prompt-template" class="form-control font-monospace" rows="12" placeholder="Example:
+Analyze the following medical claim data:
+
+Patient Name: {{patient_name}}
+Claim Amount: {{claim_amount}}
+Diagnosis: {{diagnosis}}
+
+Provide a comprehensive analysis including risk factors and recommendations."></textarea>
+                            <div class="mt-3">
+                                <button id="save-prompt-btn" class="btn btn-primary">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-save" viewBox="0 0 16 16">
+                                        <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1z"/>
+                                    </svg>
+                                    Save Prompt
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Response Schema Editor -->
+                    <div class="row mb-4">
+                        <!-- Schema Description (Right Side) -->
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header bg-info text-white">
+                                    <h5 class="mb-0">Schema Description (English)</h5>
+                                </div>
+                                <div class="card-body d-flex flex-column">
+                                    <p class="text-muted small mb-3">Describe the expected response format in plain English. Click the arrow to generate JSON schema.</p>
+                                    <textarea id="schema-description" class="form-control flex-grow-1" rows="10" placeholder="Example:
+I need a response that includes:
+- A risk level (low, medium, or high)
+- A detailed text analysis
+- A list of recommendations
+- An estimated cost as a number
+- An approval likelihood percentage from 0 to 100"></textarea>
+                                    <div class="mt-3 text-center">
+                                        <button id="generate-schema-btn" class="btn btn-primary btn-lg mb-2">
+                                            Generate JSON Schema
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-arrow-right ms-2" viewBox="0 0 16 16">
+                                                <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8"/>
+                                            </svg>
+                                        </button>
+                                        <div class="d-grid">
+                                            <button id="preview-prompt-btn" class="btn btn-outline-success">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-play-circle" viewBox="0 0 16 16">
+                                                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                                                    <path d="M6.271 5.055a.5.5 0 0 1 .52.038l3.5 2.5a.5.5 0 0 1 0 .814l-3.5 2.5A.5.5 0 0 1 6 10.5v-5a.5.5 0 0 1 .271-.445"/>
+                                                </svg>
+                                                Preview with Sample Record
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- JSON Schema (Left Side) -->
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header bg-warning text-dark">
+                                    <h5 class="mb-0">Expected Response Schema (JSON)</h5>
+                                </div>
+                                <div class="card-body d-flex flex-column">
+                                    <p class="text-muted small mb-3">Define the JSON structure you expect from the LLM response. This will be used to validate and parse outputs.</p>
+                                    <textarea id="response-schema" class="form-control font-monospace flex-grow-1" rows="10" placeholder='{
+  "risk_level": "string (low|medium|high)",
+  "analysis": "string",
+  "recommendations": ["string"],
+  "estimated_cost": "number",
+  "approval_likelihood": "number (0-100)"
+}'></textarea>
+                                    <div class="mt-3">
+                                        <button id="validate-schema-btn" class="btn btn-outline-secondary">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check-circle" viewBox="0 0 16 16">
+                                                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                                                <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+                                            </svg>
+                                            Validate JSON
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Model Configuration -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-secondary text-white">
+                            <h5 class="mb-0">Model Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="model-provider" class="form-label">Provider:</label>
+                                    <select id="model-provider" class="form-select">
+                                        <option value="lm_studio">LM Studio (Local)</option>
+                                        <option value="openai">OpenAI</option>
+                                        <option value="copilot">Microsoft Copilot</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6" id="lm-studio-endpoint-group">
+                                    <label for="lm-studio-endpoint" class="form-label">LM Studio Endpoint:</label>
+                                    <input type="text" id="lm-studio-endpoint" class="form-control" value="http://localhost:1234/v1/chat/completions" placeholder="http://localhost:1234/v1/chat/completions">
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-md-4">
+                                    <label for="model-temperature" class="form-label">Temperature:</label>
+                                    <input type="number" id="model-temperature" class="form-control" value="0.7" min="0" max="2" step="0.1">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="model-max-tokens" class="form-label">Max Tokens:</label>
+                                    <input type="number" id="model-max-tokens" class="form-control" value="4000" min="100" max="8000" step="100">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="model-timeout" class="form-label">Timeout (seconds):</label>
+                                    <input type="number" id="model-timeout" class="form-control" value="60" min="10" max="300" step="10">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Proving Ground Tab -->
+                <div id="proving-ground-tab" class="tab-content" style="display: none;">
+                    <h2 class="mb-4">Proving Ground</h2>
+
+                    <!-- Analysis Batch Selection -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">Select Analysis Batch</h5>
+                        </div>
+                        <div class="card-body">
+                            <select id="proving-batch-select" class="form-select">
+                                <option value="">-- Select an analysis batch --</option>
+                            </select>
+                            <div id="proving-batch-info" class="mt-3" style="display: none;">
+                                <p class="mb-1"><strong>Dataset:</strong> <span id="proving-dataset-name"></span></p>
+                                <p class="mb-0"><strong>Status:</strong> <span id="proving-batch-status"></span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Claim Names Input -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0">Claim Names</h5>
+                        </div>
+                        <div class="card-body">
+                            <label for="proving-claim-names" class="form-label">Enter comma-delimited list of claim names:</label>
+                            <textarea id="proving-claim-names" class="form-control font-monospace" rows="3" placeholder="Claim-001, Claim-002, Claim-003"></textarea>
+                            <small class="text-muted">Enter the names of the claims you want to test, separated by commas.</small>
+                        </div>
+                    </div>
+
+                    <!-- Prompt Configuration Display -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="mb-0">Prompt Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Prompt Template:</h6>
+                                    <pre id="proving-prompt-display" class="bg-light p-3 rounded" style="max-height: 200px; overflow-y: auto;">No prompt configured</pre>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Expected Response Schema:</h6>
+                                    <pre id="proving-schema-display" class="bg-light p-3 rounded font-monospace" style="max-height: 200px; overflow-y: auto;">No schema configured</pre>
+                                </div>
+                            </div>
+                            <div class="mt-3 text-center">
+                                <button id="proving-run-btn" class="btn btn-success btn-lg">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-play-fill" viewBox="0 0 16 16">
+                                        <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393"/>
+                                    </svg>
+                                    Run Prompt
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Results Table -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Execution Results</h5>
+                            <button id="proving-export-btn" class="btn btn-light btn-sm" style="display: none;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+                                    <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+                                    <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
+                                </svg>
+                                Export CSV
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="proving-results-loading" class="text-center py-5" style="display: none;">
+                                <div class="spinner-border text-success mb-3" role="status" style="width: 3rem; height: 3rem;">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="text-muted">Executing prompts on claims...</p>
+                                <p id="proving-progress-text" class="text-muted small"></p>
+                            </div>
+
+                            <div id="proving-results-table" style="display: none;">
+                                <div class="table-responsive">
+                                    <table class="table table-striped table-hover">
+                                        <thead id="proving-results-thead">
+                                            <!-- Dynamically populated -->
+                                        </thead>
+                                        <tbody id="proving-results-tbody">
+                                            <!-- Dynamically populated -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div id="proving-no-results" class="text-muted text-center py-5">
+                                Configure your prompt in the Prompt Builder, enter claim names above, and click "Run Prompt" to execute.
+                            </div>
+
+                            <div id="proving-error" class="alert alert-danger" style="display: none;">
+                                <h6 class="alert-heading">Error</h6>
+                                <p id="proving-error-message" class="mb-0"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Batch Execution Tab -->
+                <div id="batch-execution-tab" class="tab-content" style="display: none;">
+                    <h2 class="mb-4">Batch Execution</h2>
+
+                    <!-- Batch Selection -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">Select Analysis Batch</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="batch-exec-select" class="form-label">Choose a batch to execute:</label>
+                                <select id="batch-exec-select" class="form-select">
+                                    <option value="">-- Select an analysis batch --</option>
+                                </select>
+                            </div>
+
+                            <div id="batch-exec-info" style="display: none;">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>Dataset:</strong> <span id="batch-exec-dataset-name"></span></p>
+                                        <p><strong>Status:</strong> <span id="batch-exec-status"></span></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p><strong>Prompt Configured:</strong> <span id="batch-exec-prompt-status" class="badge"></span></p>
+                                        <p><strong>Estimated Records:</strong> <span id="batch-exec-record-count">Unknown</span></p>
+                                    </div>
+                                </div>
+
+                                <div class="text-center mt-3">
+                                    <button id="batch-exec-run-btn" class="btn btn-success btn-lg" disabled>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-play-fill me-2" viewBox="0 0 16 16">
+                                            <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393"/>
+                                        </svg>
+                                        Execute Batch
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Section -->
+                    <div id="batch-exec-progress-section" class="card mb-4" style="display: none;">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0">Execution Progress</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span><strong>Processing Records:</strong> <span id="batch-exec-current">0</span> / <span id="batch-exec-total">0</span></span>
+                                    <span><strong>ETA:</strong> <span id="batch-exec-eta">Calculating...</span></span>
+                                </div>
+                                <div class="progress" style="height: 30px;">
+                                    <div id="batch-exec-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-info">
+                                <strong>Status:</strong> <span id="batch-exec-status-message">Starting...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Results Section -->
+                    <div id="batch-exec-results-section" class="card mb-4" style="display: none;">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0">Execution Complete</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-md-3">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <h3 id="batch-exec-total-processed">0</h3>
+                                            <p class="text-muted mb-0">Records Processed</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <h3 id="batch-exec-success-count">0</h3>
+                                            <p class="text-muted mb-0">Successful</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <h3 id="batch-exec-error-count">0</h3>
+                                            <p class="text-muted mb-0">Errors</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <h3 id="batch-exec-duration">0s</h3>
+                                            <p class="text-muted mb-0">Duration</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-success">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-check-circle-fill me-2" viewBox="0 0 16 16">
+                                    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+                                </svg>
+                                <strong>CSV file generated and uploaded to Salesforce CRM Analytics dataset: Structured_Response</strong>
+                            </div>
+
+                            <p><strong>CSV File:</strong> <code id="batch-exec-csv-filename"></code></p>
+                            <button id="batch-exec-download-csv" class="btn btn-primary">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download me-2" viewBox="0 0 16 16">
+                                    <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+                                    <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
+                                </svg>
+                                Download CSV
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Error Section -->
+                    <div id="batch-exec-error-section" class="card mb-4" style="display: none;">
+                        <div class="card-header bg-danger text-white">
+                            <h5 class="mb-0">Execution Failed</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-danger">
+                                <strong>Error:</strong> <span id="batch-exec-error-message"></span>
+                            </div>
+                            <button id="batch-exec-retry-btn" class="btn btn-warning">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise me-2" viewBox="0 0 16 16">
+                                    <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                                    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+                                </svg>
+                                Retry Execution
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- History Tab -->
+                <div id="history-tab" class="tab-content" style="display: none;">
+                    <h2 class="mb-4">Execution History</h2>
+                    <p class="text-muted">View past executions and results...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Analysis Modal -->
+    <div class="modal fade" id="newAnalysisModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create New Analysis</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="new-analysis-form">
+                        <div class="mb-3">
+                            <label for="analysis-name" class="form-label">Analysis Name:</label>
+                            <input type="text" class="form-control" id="analysis-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="analysis-dataset" class="form-label">Dataset:</label>
+                            <select id="analysis-dataset" class="form-select" required>
+                                <option value="">-- Choose a dataset --</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="analysis-description" class="form-label">Description (optional):</label>
+                            <textarea class="form-control" id="analysis-description" rows="3"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="save-analysis-btn">Create Analysis</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Prompt Modal -->
+    <div class="modal fade" id="previewPromptModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-play-circle me-2" viewBox="0 0 16 16">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                            <path d="M6.271 5.055a.5.5 0 0 1 .52.038l3.5 2.5a.5.5 0 0 1 0 .814l-3.5 2.5A.5.5 0 0 1 6 10.5v-5a.5.5 0 0 1 .271-.445"/>
+                        </svg>
+                        Prompt Preview - Model Response
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Loading State -->
+                    <div id="preview-loading" class="text-center py-5">
+                        <div class="spinner-border text-success mb-3" role="status" style="width: 3rem; height: 3rem;">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted">Executing prompt with model...</p>
+                    </div>
+
+                    <!-- Preview Content -->
+                    <div id="preview-content" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6 class="text-primary">Sample Record Data</h6>
+                                <pre id="preview-record-data" class="bg-light p-3 rounded" style="max-height: 300px; overflow-y: auto;"></pre>
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="text-info">Rendered Prompt</h6>
+                                <pre id="preview-rendered-prompt" class="bg-light p-3 rounded" style="max-height: 300px; overflow-y: auto;"></pre>
+                            </div>
+                        </div>
+                        <hr class="my-4">
+                        <div>
+                            <h6 class="text-success">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-robot me-2" viewBox="0 0 16 16">
+                                    <path d="M6 12.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5M3 8.062C3 6.76 4.235 5.765 5.53 5.886a26.6 26.6 0 0 0 4.94 0C11.765 5.765 13 6.76 13 8.062v1.157a.93.93 0 0 1-.765.935c-.845.147-2.34.346-4.235.346s-3.39-.2-4.235-.346A.93.93 0 0 1 3 9.219zm4.542-.827a.25.25 0 0 0-.217.068l-.92.9a25 25 0 0 1-1.871-.183.25.25 0 0 0-.068.495c.55.076 1.232.149 2.02.193a.25.25 0 0 0 .189-.071l.754-.736.847 1.71a.25.25 0 0 0 .404.062l.932-.97a25 25 0 0 0 1.922-.188.25.25 0 0 0-.068-.495c-.538.074-1.207.145-1.98.189a.25.25 0 0 0-.166.076l-.754.785-.842-1.7a.25.25 0 0 0-.182-.135"/>
+                                    <path d="M8.5 1.866a1 1 0 1 0-1 0V3h-2A4.5 4.5 0 0 0 1 7.5V8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1v-.5A4.5 4.5 0 0 0 10.5 3h-2zM14 7.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7.5A3.5 3.5 0 0 1 5.5 4h5A3.5 3.5 0 0 1 14 7.5"/>
+                                </svg>
+                                Model Response
+                            </h6>
+                            <div class="card border-success">
+                                <div class="card-body">
+                                    <pre id="preview-model-response" class="mb-0" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;"></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error State -->
+                    <div id="preview-error" class="alert alert-danger" style="display: none;">
+                        <h6 class="alert-heading">Error</h6>
+                        <p id="preview-error-message" class="mb-0"></p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
