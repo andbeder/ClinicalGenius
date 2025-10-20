@@ -86,11 +86,6 @@ function setupEventListeners() {
         validateResponseSchema();
     });
 
-    // Prompt Builder - Model provider change
-    document.getElementById('model-provider').addEventListener('change', function() {
-        handleProviderChange(this.value);
-    });
-
     // Prompt Builder - Generate schema from description
     document.getElementById('generate-schema-btn').addEventListener('click', function() {
         generateSchemaFromDescription();
@@ -130,6 +125,21 @@ function setupEventListeners() {
     document.getElementById('batch-exec-download-csv').addEventListener('click', function() {
         downloadBatchCSV();
     });
+
+    // Settings - Provider change
+    document.getElementById('settings-provider').addEventListener('change', function() {
+        updateSettingsProviderUI();
+    });
+
+    // Settings - Save settings
+    document.getElementById('save-settings-btn').addEventListener('click', function() {
+        saveSettings();
+    });
+
+    // Settings - Test connection
+    document.getElementById('test-connection-btn').addEventListener('click', function() {
+        testConnection();
+    });
 }
 
 function switchTab(tabName) {
@@ -152,6 +162,8 @@ function switchTab(tabName) {
         loadProvingGroundData();
     } else if (tabName === 'batch-execution') {
         loadBatchExecutionData();
+    } else if (tabName === 'settings') {
+        loadSettings();
     }
 }
 
@@ -571,17 +583,12 @@ async function savePromptConfiguration() {
         return;
     }
 
-    // Gather configuration
+    // Gather configuration (model settings are now in global Settings tab)
     const config = {
         batch_id: currentBatch.id,
         prompt_template: document.getElementById('prompt-template').value,
         response_schema: document.getElementById('response-schema').value,
-        schema_description: document.getElementById('schema-description').value,
-        provider: document.getElementById('model-provider').value,
-        endpoint: document.getElementById('lm-studio-endpoint').value,
-        temperature: parseFloat(document.getElementById('model-temperature').value),
-        max_tokens: parseInt(document.getElementById('model-max-tokens').value),
-        timeout: parseInt(document.getElementById('model-timeout').value)
+        schema_description: document.getElementById('schema-description').value
     };
 
     if (!config.prompt_template) {
@@ -626,17 +633,10 @@ async function loadPromptConfig(batchId) {
         const data = await response.json();
 
         if (data.success && data.config) {
-            // Populate form fields
+            // Populate form fields (model config is now in Settings tab)
             document.getElementById('prompt-template').value = data.config.prompt_template || '';
             document.getElementById('response-schema').value = data.config.response_schema || '';
             document.getElementById('schema-description').value = data.config.schema_description || '';
-            document.getElementById('model-provider').value = data.config.provider || 'lm_studio';
-            document.getElementById('lm-studio-endpoint').value = data.config.endpoint || 'http://localhost:1234/v1/chat/completions';
-            document.getElementById('model-temperature').value = data.config.temperature || 0.7;
-            document.getElementById('model-max-tokens').value = data.config.max_tokens || 4000;
-            document.getElementById('model-timeout').value = data.config.timeout || 60;
-
-            handleProviderChange(data.config.provider || 'lm_studio');
         }
     } catch (error) {
         console.error('Error loading prompt config:', error);
@@ -658,15 +658,6 @@ async function previewPrompt() {
     // Get response schema (optional)
     const responseSchema = document.getElementById('response-schema').value;
 
-    // Get model configuration
-    const modelConfig = {
-        provider: document.getElementById('model-provider').value,
-        endpoint: document.getElementById('lm-studio-endpoint').value,
-        temperature: parseFloat(document.getElementById('model-temperature').value),
-        max_tokens: parseInt(document.getElementById('model-max-tokens').value),
-        timeout: parseInt(document.getElementById('model-timeout').value)
-    };
-
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('previewPromptModal'));
     modal.show();
@@ -677,14 +668,14 @@ async function previewPrompt() {
     document.getElementById('preview-error').style.display = 'none';
 
     try {
+        // Model config is now global, backend will use settings.json
         const response = await fetch('/api/analysis/preview-prompt-execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 batch_id: currentBatch.id,
                 prompt_template: promptTemplate,
-                response_schema: responseSchema,
-                model_config: modelConfig
+                response_schema: responseSchema
             })
         });
 
@@ -734,15 +725,7 @@ function validateResponseSchema() {
     }
 }
 
-function handleProviderChange(provider) {
-    const endpointGroup = document.getElementById('lm-studio-endpoint-group');
-
-    if (provider === 'lm_studio') {
-        endpointGroup.style.display = 'block';
-    } else {
-        endpointGroup.style.display = 'none';
-    }
-}
+// handleProviderChange removed - model config now in Settings tab
 
 async function generateSchemaFromDescription() {
     const description = document.getElementById('schema-description').value.trim();
@@ -983,7 +966,7 @@ function exportProvingCSV() {
         return;
     }
 
-    // Extract all unique keys
+    // Extract all unique keys from responses
     const allKeys = new Set();
     provingResults.forEach(result => {
         if (result.response && typeof result.response === 'object') {
@@ -993,7 +976,7 @@ function exportProvingCSV() {
 
     const columns = ['claim_name', ...Array.from(allKeys)];
 
-    // Build CSV content
+    // Build CSV content (structured format - one record per row)
     let csv = columns.join(',') + '\n';
 
     provingResults.forEach(result => {
@@ -1293,5 +1276,113 @@ async function downloadBatchCSV() {
     } catch (error) {
         console.error('Error downloading CSV:', error);
         showAlert('danger', 'Error downloading CSV: ' + error.message);
+    }
+}
+
+// ============================================================================
+// Settings Functions
+// ============================================================================
+
+async function loadSettings() {
+    try {
+        const response = await fetch('/api/settings');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                const settings = data.settings;
+
+                // Populate form fields
+                document.getElementById('settings-provider').value = settings.provider || 'lm_studio';
+                document.getElementById('settings-endpoint').value = settings.endpoint || 'http://localhost:1234';
+                document.getElementById('settings-model').value = settings.model || 'gpt-4o-mini';
+                document.getElementById('settings-temperature').value = settings.temperature || 0.7;
+                document.getElementById('settings-max-tokens').value = settings.max_tokens || 4000;
+                document.getElementById('settings-timeout').value = settings.timeout || 60;
+
+                // Show/hide endpoint and API key fields based on provider
+                updateSettingsProviderUI();
+            }
+        }
+    } catch (error) {
+        console.error('Error loading settings:', error);
+    }
+}
+
+function updateSettingsProviderUI() {
+    const provider = document.getElementById('settings-provider').value;
+    const endpointGroup = document.getElementById('settings-endpoint-group');
+    const apiKeyGroup = document.getElementById('settings-api-key-group');
+
+    if (provider === 'lm_studio') {
+        endpointGroup.style.display = 'block';
+        apiKeyGroup.style.display = 'none';
+    } else {
+        endpointGroup.style.display = 'none';
+        apiKeyGroup.style.display = 'block';
+    }
+}
+
+async function saveSettings() {
+    const settings = {
+        provider: document.getElementById('settings-provider').value,
+        endpoint: document.getElementById('settings-endpoint').value,
+        model: document.getElementById('settings-model').value,
+        temperature: parseFloat(document.getElementById('settings-temperature').value),
+        max_tokens: parseInt(document.getElementById('settings-max-tokens').value),
+        timeout: parseInt(document.getElementById('settings-timeout').value)
+    };
+
+    // Only include API key if it's filled in
+    const apiKey = document.getElementById('settings-api-key').value;
+    if (apiKey && apiKey.trim() !== '') {
+        settings.api_key = apiKey;
+    }
+
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showAlert('success', 'Settings saved successfully');
+            document.getElementById('settings-status').style.display = 'none';
+        } else {
+            showAlert('danger', 'Failed to save settings: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error saving settings:', error);
+        showAlert('danger', 'Error saving settings: ' + error.message);
+    }
+}
+
+async function testConnection() {
+    const statusDiv = document.getElementById('settings-status');
+    statusDiv.style.display = 'block';
+    statusDiv.className = 'mt-3 alert alert-info';
+    statusDiv.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Testing connection...';
+
+    try {
+        const response = await fetch('/api/test-connection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            statusDiv.className = 'mt-3 alert alert-success';
+            statusDiv.innerHTML = `<strong>Success!</strong> ${data.message}<br><small>Response: ${data.response}</small>`;
+        } else {
+            statusDiv.className = 'mt-3 alert alert-danger';
+            statusDiv.innerHTML = `<strong>Failed!</strong> ${data.message}`;
+        }
+    } catch (error) {
+        console.error('Error testing connection:', error);
+        statusDiv.className = 'mt-3 alert alert-danger';
+        statusDiv.innerHTML = `<strong>Error!</strong> ${error.message}`;
     }
 }

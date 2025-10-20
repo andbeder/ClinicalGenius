@@ -37,7 +37,27 @@ def get_sf_client():
     global sf_client
     if sf_client is None:
         sf_client = SalesforceClient()
+        # Authenticate on first use
+        sf_client.authenticate()
     return sf_client
+
+def load_settings():
+    """Load settings from settings.json file"""
+    settings_file = 'settings.json'
+    if os.path.exists(settings_file):
+        with open(settings_file, 'r') as f:
+            settings = json.load(f)
+    else:
+        # Default settings from environment
+        settings = {
+            'provider': os.getenv('LLM_PROVIDER', 'lm_studio'),
+            'endpoint': os.getenv('LM_STUDIO_ENDPOINT', 'http://localhost:1234'),
+            'model': os.getenv('LLM_MODEL', 'gpt-4o-mini'),
+            'temperature': float(os.getenv('LLM_TEMPERATURE', '0.7')),
+            'max_tokens': int(os.getenv('LLM_MAX_TOKENS', '4000')),
+            'timeout': 60
+        }
+    return settings
 
 @app.route('/')
 def index():
@@ -61,6 +81,55 @@ def authenticate():
             return jsonify({'success': False, 'error': 'Authentication failed'}), 401
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """Get application settings"""
+    try:
+        settings_file = 'settings.json'
+        if os.path.exists(settings_file):
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+        else:
+            # Default settings
+            settings = {
+                'provider': os.getenv('LLM_PROVIDER', 'lm_studio'),
+                'endpoint': os.getenv('LM_STUDIO_ENDPOINT', 'http://localhost:1234'),
+                'model': os.getenv('LLM_MODEL', 'gpt-4o-mini'),
+                'temperature': float(os.getenv('LLM_TEMPERATURE', '0.7')),
+                'max_tokens': int(os.getenv('LLM_MAX_TOKENS', '4000')),
+                'timeout': 60
+            }
+        return jsonify({'success': True, 'settings': settings})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/settings', methods=['POST'])
+def save_settings():
+    """Save application settings"""
+    try:
+        data = request.json
+        settings_file = 'settings.json'
+
+        # Save to file
+        with open(settings_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        # Update LM client configuration
+        lm_client.update_config(data)
+
+        return jsonify({'success': True, 'message': 'Settings saved successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/test-connection', methods=['POST'])
+def test_connection():
+    """Test connection to LLM provider"""
+    try:
+        result = lm_client.test_connection()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/fields', methods=['GET'])
 def get_fields():
@@ -436,7 +505,7 @@ def save_prompt_config():
             c.execute('''
                 INSERT INTO prompts (batch_id, prompt_template, response_schema, schema_description, provider, endpoint,
                                    temperature, max_tokens, timeout, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (batch_id, prompt_template, response_schema, schema_description, provider, endpoint, temperature, max_tokens, timeout, now, now))
 
         conn.commit()
@@ -518,10 +587,12 @@ def preview_prompt_execute():
         batch_id = data.get('batch_id')
         prompt_template = data.get('prompt_template')
         response_schema = data.get('response_schema', '')
-        model_config = data.get('model_config', {})
 
         if not batch_id or not prompt_template:
             return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+
+        # Load global LLM settings
+        global_settings = load_settings()
 
         # Get batch info
         conn = sqlite3.connect('analysis_batches.db')
@@ -581,11 +652,8 @@ def preview_prompt_execute():
 
         print(f"Rendered prompt: {rendered_prompt}")
 
-        # Configure LM client with model settings
-        lm_client.provider = model_config.get('provider', 'lm_studio')
-        lm_client.endpoint = model_config.get('endpoint', 'http://localhost:1234')
-        lm_client.temperature = model_config.get('temperature', 0.7)
-        lm_client.max_tokens = model_config.get('max_tokens', 4000)
+        # Configure LM client with global settings
+        lm_client.update_config(global_settings)
 
         # Execute the prompt with the model
         try:
@@ -779,18 +847,33 @@ def execute_proving_ground():
         # Query all records (we'll filter by name)
         all_records = client.query_dataset(batch['dataset_id'], field_names, limit=1000)
 
+        print(f"Searching for claim names: {claim_names}")
+        print(f"Retrieved {len(all_records)} records from dataset")
+
         # Filter records by claim names
         matched_records = []
+        all_record_names = []
         for record in all_records:
             # Try various name fields
             record_name = (record.get('Name') or record.get('name') or
                           record.get('Title') or record.get('title') or '')
 
+            all_record_names.append(record_name)
+
             if record_name in claim_names:
                 matched_records.append(record)
 
+        print(f"Sample record names from dataset: {all_record_names[:10]}")
+        print(f"Matched {len(matched_records)} records")
+
         if not matched_records:
-            return jsonify({'success': False, 'error': 'No records found matching the provided claim names'}), 404
+            return jsonify({
+                'success': False,
+                'error': f'No records found matching the provided claim names. Found {len(all_records)} total records in dataset. Sample names: {", ".join(all_record_names[:5])}'
+            }), 404
+
+        # Load global settings for LLM
+        global_settings = load_settings()
 
         # Execute prompt on each matched record
         results = []
@@ -807,13 +890,8 @@ def execute_proving_ground():
                 if prompt_config['response_schema']:
                     rendered_prompt += f"\n\nPlease respond ONLY with valid JSON matching this exact schema:\n{prompt_config['response_schema']}\n\nDo not include any explanatory text, only the JSON object."
 
-                # Execute with model
-                lm_client.update_config({
-                    'provider': prompt_config['provider'],
-                    'endpoint': prompt_config['endpoint'],
-                    'temperature': prompt_config['temperature'],
-                    'max_tokens': prompt_config['max_tokens']
-                })
+                # Execute with model using global settings
+                lm_client.update_config(global_settings)
 
                 model_response = lm_client.generate(rendered_prompt)
 
@@ -1017,13 +1095,9 @@ def run_batch_execution(execution_id, batch_id):
         execution['total'] = len(all_records)
         execution['status'] = f'Processing {len(all_records)} records...'
 
-        # Configure LLM client
-        lm_client.update_config({
-            'provider': prompt_config['provider'],
-            'endpoint': prompt_config['endpoint'],
-            'temperature': prompt_config['temperature'],
-            'max_tokens': prompt_config['max_tokens']
-        })
+        # Configure LLM client with global settings
+        global_settings = load_settings()
+        lm_client.update_config(global_settings)
 
         # Process each record
         results = []

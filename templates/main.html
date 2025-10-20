@@ -29,6 +29,9 @@
                     <li class="nav-item">
                         <a class="nav-link" data-tab="history" href="#history">History</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-tab="settings" href="#settings">Settings</a>
+                    </li>
                 </ul>
                 <hr class="my-4">
                 <div class="text-muted small">
@@ -273,41 +276,9 @@ I need a response that includes:
                         </div>
                     </div>
 
-                    <!-- Model Configuration -->
-                    <div class="card mb-4">
-                        <div class="card-header bg-secondary text-white">
-                            <h5 class="mb-0">Model Configuration</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <label for="model-provider" class="form-label">Provider:</label>
-                                    <select id="model-provider" class="form-select">
-                                        <option value="lm_studio">LM Studio (Local)</option>
-                                        <option value="openai">OpenAI</option>
-                                        <option value="copilot">Microsoft Copilot</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6" id="lm-studio-endpoint-group">
-                                    <label for="lm-studio-endpoint" class="form-label">LM Studio Endpoint:</label>
-                                    <input type="text" id="lm-studio-endpoint" class="form-control" value="http://localhost:1234/v1/chat/completions" placeholder="http://localhost:1234/v1/chat/completions">
-                                </div>
-                            </div>
-                            <div class="row mt-3">
-                                <div class="col-md-4">
-                                    <label for="model-temperature" class="form-label">Temperature:</label>
-                                    <input type="number" id="model-temperature" class="form-control" value="0.7" min="0" max="2" step="0.1">
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="model-max-tokens" class="form-label">Max Tokens:</label>
-                                    <input type="number" id="model-max-tokens" class="form-control" value="4000" min="100" max="8000" step="100">
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="model-timeout" class="form-label">Timeout (seconds):</label>
-                                    <input type="number" id="model-timeout" class="form-control" value="60" min="10" max="300" step="10">
-                                </div>
-                            </div>
-                        </div>
+                    <!-- Note about settings -->
+                    <div class="alert alert-info">
+                        <strong>Model Configuration:</strong> LLM provider, temperature, and other model settings are now configured globally in the <a href="#settings" class="alert-link" onclick="switchTab('settings')">Settings</a> tab.
                     </div>
                 </div>
 
@@ -402,6 +373,11 @@ I need a response that includes:
                                         </tbody>
                                     </table>
                                 </div>
+                            </div>
+
+                            <div id="proving-results-error" class="alert alert-danger" style="display: none;">
+                                <h5 class="alert-heading">Error</h5>
+                                <p id="proving-results-error-message" class="mb-0"></p>
                             </div>
 
                             <div id="proving-no-results" class="text-muted text-center py-5">
@@ -562,6 +538,99 @@ I need a response that includes:
                 <div id="history-tab" class="tab-content" style="display: none;">
                     <h2 class="mb-4">Execution History</h2>
                     <p class="text-muted">View past executions and results...</p>
+                </div>
+
+                <!-- Settings Tab -->
+                <div id="settings-tab" class="tab-content" style="display: none;">
+                    <h2 class="mb-4">Settings</h2>
+
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">LLM Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <strong>Note:</strong> These settings apply globally to all prompt executions in Proving Ground and Batch Execution.
+                            </div>
+
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="settings-provider" class="form-label">Provider:</label>
+                                    <select id="settings-provider" class="form-select">
+                                        <option value="lm_studio">LM Studio (Local)</option>
+                                        <option value="openai">OpenAI</option>
+                                        <option value="copilot">Microsoft Copilot</option>
+                                    </select>
+                                    <small class="text-muted">Choose your LLM provider</small>
+                                </div>
+                                <div class="col-md-6" id="settings-endpoint-group">
+                                    <label for="settings-endpoint" class="form-label">Endpoint:</label>
+                                    <input type="text" id="settings-endpoint" class="form-control" value="http://localhost:1234" placeholder="http://localhost:1234">
+                                    <small class="text-muted">LM Studio endpoint URL</small>
+                                </div>
+                            </div>
+
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="settings-model" class="form-label">Model:</label>
+                                    <input type="text" id="settings-model" class="form-control" value="gpt-4o-mini" placeholder="gpt-4o-mini">
+                                    <small class="text-muted">Model name (for OpenAI/Copilot)</small>
+                                </div>
+                                <div class="col-md-6" id="settings-api-key-group" style="display: none;">
+                                    <label for="settings-api-key" class="form-label">API Key:</label>
+                                    <input type="password" id="settings-api-key" class="form-control" placeholder="sk-...">
+                                    <small class="text-muted">Your OpenAI/Copilot API key</small>
+                                </div>
+                            </div>
+
+                            <div class="row mb-3">
+                                <div class="col-md-4">
+                                    <label for="settings-temperature" class="form-label">Temperature:</label>
+                                    <input type="number" id="settings-temperature" class="form-control" value="0.7" min="0" max="2" step="0.1">
+                                    <small class="text-muted">0.0 = Deterministic, 2.0 = Creative</small>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="settings-max-tokens" class="form-label">Max Tokens:</label>
+                                    <input type="number" id="settings-max-tokens" class="form-control" value="4000" min="100" max="8000" step="100">
+                                    <small class="text-muted">Maximum response length</small>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="settings-timeout" class="form-label">Timeout (seconds):</label>
+                                    <input type="number" id="settings-timeout" class="form-control" value="60" min="10" max="300" step="10">
+                                    <small class="text-muted">Request timeout</small>
+                                </div>
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button id="save-settings-btn" class="btn btn-success">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check-circle" viewBox="0 0 16 16">
+                                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                                        <path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/>
+                                    </svg>
+                                    Save Settings
+                                </button>
+                                <button id="test-connection-btn" class="btn btn-outline-primary">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-lightning" viewBox="0 0 16 16">
+                                        <path d="M5.52.359A.5.5 0 0 1 6 0h4a.5.5 0 0 1 .474.658L8.694 6H12.5a.5.5 0 0 1 .395.807l-7 9a.5.5 0 0 1-.873-.454L6.823 9.5H3.5a.5.5 0 0 1-.48-.641zM6.374 1 4.168 8.5H7.5a.5.5 0 0 1 .478.647L6.78 13.04 11.478 7H8a.5.5 0 0 1-.474-.658L9.306 1z"/>
+                                    </svg>
+                                    Test Connection
+                                </button>
+                            </div>
+
+                            <div id="settings-status" class="mt-3" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <div class="card mt-4">
+                        <div class="card-header bg-secondary text-white">
+                            <h5 class="mb-0">Application Information</h5>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Version:</strong> 2.0</p>
+                            <p><strong>Environment:</strong> <span id="env-info">Loading...</span></p>
+                            <p class="mb-0"><strong>API Keys:</strong> Stored in .env file (not editable from UI for security)</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

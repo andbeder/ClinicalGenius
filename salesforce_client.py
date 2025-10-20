@@ -74,6 +74,11 @@ class SalesforceClient:
 
     def _make_request(self, method: str, url: str, **kwargs) -> requests.Response:
         """Make HTTP request with automatic token refresh on 401"""
+        # If no token, authenticate first
+        if not self.access_token:
+            print("No access token, authenticating...")
+            self.authenticate()
+
         headers = kwargs.pop('headers', self._get_headers())
 
         # Make the request
