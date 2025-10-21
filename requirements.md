@@ -142,7 +142,7 @@ The system shall provide clear feedback for failed executions, network errors, i
 - RESTful API endpoints for all operations
 
 ### 5.3 Integrations
-- **Salesforce Authentication:** JWT bearer token flow via Node.js script
+- **Salesforce Authentication:** JWT bearer token flow via Python script with AES-256 key decryption
 - **CRM Analytics API:** Dataset metadata, field discovery, SAQL queries
 - **LLM Providers:** LM Studio, OpenAI, Microsoft Copilot
 - **Prompt Engine:** Variable substitution with `{{field_name}}` syntax

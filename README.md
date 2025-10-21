@@ -88,7 +88,7 @@ Clinical Genius enables organizations to enrich their Salesforce CRM Analytics d
 ### Prerequisites
 
 - **Python 3.8+**
-- **Node.js 14+** (for Salesforce JWT authentication)
+- **Salesforce CLI** (`sf` command) - for JWT authentication
 - **Salesforce Developer Edition** or Enterprise org with CRM Analytics enabled
 - **LLM Provider** (one of):
   - LM Studio running locally
@@ -110,18 +110,13 @@ pip install -r requirements.txt
 
 **requirements.txt:**
 ```
-flask==3.0.0
+Flask==3.0.0
 python-dotenv==1.0.0
 requests==2.31.0
+cryptography==41.0.7
 ```
 
-### 3. Install Node.js Dependencies
-
-```bash
-npm install jsforce
-```
-
-### 4. Configure Salesforce Connected App
+### 3. Configure Salesforce Connected App
 
 1. In Salesforce Setup, create a new Connected App:
    - Enable OAuth Settings
@@ -295,6 +290,7 @@ This format allows you to:
 clinical-genius/
 ├── app.py                      # Main Flask application
 ├── salesforce_client.py        # Salesforce CRM Analytics client
+├── sfdcJwtAuth.py              # Salesforce JWT authentication
 ├── lm_studio_client.py         # Multi-provider LLM client
 ├── prompt_engine.py            # Prompt template engine
 ├── templates/
@@ -312,8 +308,6 @@ clinical-genius/
 ├── README.md                   # This file
 └── .env                        # Environment configuration
 
-../                             # Parent directory (shared across projects)
-└── sfdcJwtAuth.js              # Node.js JWT authentication (shared)
 ```
 
 ## Troubleshooting

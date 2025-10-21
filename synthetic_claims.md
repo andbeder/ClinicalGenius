@@ -93,7 +93,7 @@ The system shall:
 ## 4. Non-Functional Requirements
 
 - **Security:**
-  Salesforce credentials shall be loaded from environment variables using the existing sfdcJwtAuth.js authentication module
+  Salesforce credentials shall be loaded from environment variables using the existing sfdcJwtAuth.py authentication module
 
 - **Performance:**
   The system should process batch generation efficiently, with progress updates after each record
@@ -127,7 +127,7 @@ The system shall:
 ## 6. Technical Architecture
 
 ### 6.1 Backend (Flask)
-- **Authentication Module**: Reuse existing sfdcJwtAuth.js via Node.js subprocess
+- **Authentication Module**: Reuse existing sfdcJwtAuth.py via Python import
 - **Salesforce API Client**: REST API calls for schema introspection and record CRUD
 - **LM Studio Client**: HTTP client for completion API calls
 - **Template Engine**: Variable substitution for prompt templates

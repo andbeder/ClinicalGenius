@@ -184,9 +184,9 @@ This allows:
 - Purpose: Generate AI-powered synthetic medical malpractice claim data for Salesforce
 
 ### Authentication
-- Implemented JWT-based Salesforce authentication via `sfdcJwtAuth.js`
+- Implemented JWT-based Salesforce authentication via `sfdcJwtAuth.py`
 - Credentials stored in `.env` file:
-  - Username: andbeder@gmail.com
+  - Username: (configured in .env)
   - Connected App Client ID configured
   - JWT key stored in `../jwt.key.enc`
   - Login URL: https://login.salesforce.com
@@ -233,9 +233,9 @@ Successfully deployed 4 Long Text Area fields to Claim__c object:
 ```
 app.py                  - Flask routes and main application
 salesforce_client.py    - Salesforce API integration (describe, query, CRUD)
+sfdcJwtAuth.py          - JWT authentication for Salesforce
 lm_studio_client.py     - LLM provider clients (LM Studio, OpenAI, Copilot)
 prompt_engine.py        - Template variable substitution
-sfdcJwtAuth.js         - JWT authentication for Salesforce
 templates/index.html    - Bootstrap UI
 static/css/style.css   - Custom styling
 static/js/app.js       - Frontend logic
@@ -275,8 +275,8 @@ python app.py
 # Deploy fields to Salesforce
 sf project deploy start --source-dir force-app/main/default/objects/Claim__c/fields
 
-# Test Salesforce connection (sfdcJwtAuth.js is in parent directory)
-SFDC_USERNAME="andbeder@gmail.com" KEY_PASS="JaCieDam100" SFDC_CLIENT_ID="3MVG9XgkMlifdwVAA3YLU.YAgszhXc3HIDrpHaKyzpUhgusGKYXhm92lAgKYPvfviYQmosjdr.FqBtXfe.UB_" node ../sfdcJwtAuth.js
+# Test Salesforce connection
+SFDC_USERNAME="your-email@example.com" KEY_PASS="your-key-password" SFDC_CLIENT_ID="your-connected-app-client-id" python3 sfdcJwtAuth.py
 ```
 
 ### Known Issues & Future Enhancements

@@ -16,7 +16,7 @@ class SalesforceClient:
         self.api_version = 'v60.0'
 
     def authenticate(self) -> bool:
-        """Authenticate to Salesforce using JWT via Node.js script"""
+        """Authenticate to Salesforce using JWT via Python script"""
         try:
             # Set environment variables
             env = os.environ.copy()
@@ -25,36 +25,15 @@ class SalesforceClient:
             env['SFDC_CLIENT_ID'] = os.getenv('SFDC_CLIENT_ID')
             env['SFDC_LOGIN_URL'] = os.getenv('SFDC_LOGIN_URL', 'https://login.salesforce.com')
 
-            # Run the Node.js authentication script from parent directory
-            result = subprocess.run(
-                ['node', '../sfdcJwtAuth.js'],
-                env=env,
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                timeout=30
-            )
+            # Import the Python authentication module from current directory
+            import sfdcJwtAuth
 
-            if result.returncode != 0:
-                raise Exception(f"Authentication failed: {result.stderr}")
+            # Call the authorize function
+            result = sfdcJwtAuth.authorize()
 
-            # Get the access token and instance URL from sf CLI
-            # The Node.js script stores credentials in sf CLI org cache
-            org_info = subprocess.run(
-                ['sf', 'org', 'display', '--target-org', 'myJwtOrg', '--json'],
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                timeout=10
-            )
-
-            if org_info.returncode == 0:
-                org_data = json.loads(org_info.stdout)
-                self.access_token = org_data['result']['accessToken']
-                self.instance_url = org_data['result']['instanceUrl']
-                print(f"Retrieved credentials from sf CLI: {self.instance_url}")
-            else:
-                raise Exception(f"Failed to retrieve credentials from sf CLI: {org_info.stderr}")
+            self.access_token = result['accessToken']
+            self.instance_url = result['instanceUrl']
+            print(f"Retrieved credentials: {self.instance_url}")
 
             if not self.access_token or not self.instance_url:
                 raise Exception("Could not retrieve access token or instance URL")
