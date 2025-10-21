@@ -1,6 +1,169 @@
 # Development Notes - Clinical Genius
 
-## Latest Update: Prompt Builder & Proving Ground Improvements (October 21, 2025)
+## Latest Update: Server-Side Execution Status Persistence (October 21, 2025)
+
+### View Execution Feature
+
+**Purpose**: Allow users to navigate from History tab to Batch Execution tab and check execution status even hours later after closing the browser.
+
+**Implementation**:
+1. **"View Execution" Button on History Tab**
+   - Added button with play-circle icon to each history record
+   - Calls `viewBatchExecution(batchId)` to navigate to Batch Execution tab
+   - Automatically loads batch details and checks for active/persisted execution status
+
+2. **Server-Side Execution Status Persistence**
+   - New `execution_status` table in database:
+     ```sql
+     CREATE TABLE execution_status (
+         batch_id TEXT PRIMARY KEY,
+         execution_id TEXT NOT NULL,
+         status TEXT NOT NULL,
+         current INTEGER DEFAULT 0,
+         total INTEGER DEFAULT 0,
+         success_count INTEGER DEFAULT 0,
+         error_count INTEGER DEFAULT 0,
+         started_at TEXT NOT NULL,
+         updated_at TEXT NOT NULL,
+         complete INTEGER DEFAULT 0,
+         success INTEGER DEFAULT 0,
+         error TEXT,
+         FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE
+     )
+     ```
+   - Status persisted at execution start, every 10 records, and at completion/error
+   - Survives server restarts and browser closures
+
+3. **API Endpoint**:
+   - `GET /api/analysis/batch-status/<batch_id>` - Returns both active (in-memory) and persisted status
+   - Checks `batch_executions` dictionary first for active executions
+   - Falls back to database for persisted status
+
+4. **Frontend Updates**:
+   - `handleBatchExecSelection()` now checks for active/persisted execution on load
+   - If active execution found, starts polling automatically
+   - If persisted incomplete execution found, displays last known status with timestamp
+   - `showPersistedExecutionStatus()` displays server-side status with last updated time
+
+**User Workflow**:
+1. User starts a long-running batch (1000+ records)
+2. User closes browser or navigates away
+3. Hours later, user returns to **Batch Execution tab**
+4. System automatically detects active execution and shows alert at top with current progress
+5. User clicks "View Progress Below" to see detailed execution status
+6. Alternatively, user can go to **History tab** after completion and click "View Execution"
+
+**Active Execution Detection**:
+- When Batch Execution tab loads, `checkForActiveExecutions()` queries all batches
+- If active execution found, shows prominent alert with batch name and progress
+- "View Progress Below" button auto-selects the batch and scrolls to progress section
+- Works even if user closed browser - detects in-memory active executions on server
+
+---
+
+## Previous Update: History Tab & Wide-Format CSV Export (October 21, 2025)
+
+### 1. History Tab Implementation
+
+**Features**:
+- View all batch execution history in a table
+- Download individual batch CSVs
+- Download combined CSV merging all batches
+- Automatic history cleanup (one record per batch)
+- Execution statistics: total records, success/error counts, duration
+
+**Database Schema** (`execution_history` table):
+- `batch_id` (PRIMARY KEY) - ensures one history record per batch
+- `batch_name`, `dataset_name` - for display and filtering
+- `total_records`, `success_count`, `error_count` - statistics
+- `execution_time` - duration in seconds
+- `csv_data` - complete CSV stored as TEXT
+- `executed_at` - timestamp
+
+**API Endpoints**:
+- `GET /api/analysis/history` - Get all execution history
+- `GET /api/analysis/history/<batch_id>/csv` - Download batch CSV
+- `GET /api/analysis/history/combined-csv` - Download merged CSV
+- `DELETE /api/analysis/history/<batch_id>` - Delete history (auto on re-run)
+
+**UI Features**:
+- Tabular display with batch name, dataset, execution time, statistics
+- Download buttons for each batch
+- "Download Combined CSV" button merges all batches
+- Auto-loads when History tab is opened
+
+### 2. CSV Format Changed to Wide Format (Analytics-Ready)
+
+**Problem**: The previous "long" format (Record ID, Parameter Name, Value) doesn't work for analytics because:
+- Cannot pivot on text fields in CRM Analytics
+- Difficult to join back to source data
+- Not suitable for analytical queries
+
+**Old Format** (Long/Narrow):
+```csv
+Record ID,Batch Name,Dataset Name,Parameter Name,Value
+REC-001,Batch1,Dataset1,condition,Diabetes
+REC-001,Batch1,Dataset1,severity,High
+REC-001,Batch1,Dataset1,risk_score,8.5
+```
+
+**New Format** (Wide):
+```csv
+Record ID,condition,risk_score,severity
+REC-001,Diabetes,8.5,High
+REC-002,Hypertension,6.2,Medium
+REC-003,COPD,9.1,High
+```
+
+**Benefits**:
+- ✅ One row per record - easy to join to source data
+- ✅ Each JSON response field becomes a column
+- ✅ Direct import into analytics tools
+- ✅ Can join multiple batch results using Record ID
+- ✅ Measures (numbers) and dimensions (text) in proper columns
+
+**Implementation** (`app.py:1602-1654`):
+- Two-pass algorithm: collect all unique fields, then write rows
+- Columns sorted alphabetically for consistency
+- Complex values (arrays, objects) stored as JSON strings
+- Missing values filled with empty strings
+
+### 3. Combined CSV Export with Column Merging
+
+**Feature**: Download all batch executions merged into one CSV file
+
+**How It Works**:
+1. Loads all execution history CSVs
+2. Merges by Record ID (like a SQL JOIN)
+3. Prefixes columns with batch name to avoid conflicts
+4. Fills missing values with empty strings
+
+**Example Combined CSV**:
+```csv
+Record ID,Batch1_condition,Batch1_severity,Batch2_risk_score,Batch2_complications
+REC-001,Diabetes,High,8.5,Retinopathy
+REC-002,Hypertension,Medium,6.2,
+REC-003,COPD,,9.1,Respiratory Failure
+```
+
+**Use Case**: Run multiple analysis batches on the same dataset, download one CSV with all results, join to source data for comprehensive analysis.
+
+### 4. Record ID Field from Dataset Configuration
+
+**Change**: CSV now uses the `record_id_field` configured in the Dataset tab, not Salesforce's literal `Id` field.
+
+**Why**: Different datasets may use different identifier fields (ClaimNumber, CaseID, etc.)
+
+**Implementation** (`app.py:1433-1439`, `1509-1513`):
+- Loads `record_id_field` from dataset configuration
+- Uses that field as the Record ID in CSV exports
+- Falls back to common fields (Id, Name) if no config
+
+**Benefit**: CSV Record IDs match your analytical dataset's primary key for easy joins.
+
+---
+
+## Previous Update: Prompt Builder & Proving Ground Improvements (October 21, 2025)
 
 ### 1. Fixed: Prompt Builder Now Shows Only Selected Fields
 

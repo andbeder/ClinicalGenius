@@ -627,6 +627,37 @@ def init_db():
             FOREIGN KEY (batch_id) REFERENCES batches(id)
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS execution_history (
+            batch_id TEXT PRIMARY KEY,
+            batch_name TEXT NOT NULL,
+            dataset_name TEXT NOT NULL,
+            total_records INTEGER NOT NULL,
+            success_count INTEGER NOT NULL,
+            error_count INTEGER NOT NULL,
+            execution_time REAL NOT NULL,
+            csv_data TEXT NOT NULL,
+            executed_at TEXT NOT NULL,
+            FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS execution_status (
+            batch_id TEXT PRIMARY KEY,
+            execution_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            current INTEGER DEFAULT 0,
+            total INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            started_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            complete INTEGER DEFAULT 0,
+            success INTEGER DEFAULT 0,
+            error TEXT,
+            FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -1314,6 +1345,34 @@ def execute_batch():
             'start_time': time.time()
         }
 
+        # Persist initial status to database
+        try:
+            conn = sqlite3.connect('analysis_batches.db')
+            c = conn.cursor()
+            c.execute('''
+                INSERT OR REPLACE INTO execution_status
+                (batch_id, execution_id, status, current, total, success_count, error_count,
+                 started_at, updated_at, complete, success, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                batch_id,
+                execution_id,
+                'starting',
+                0,
+                0,
+                0,
+                0,
+                datetime.now().isoformat(),
+                datetime.now().isoformat(),
+                0,
+                0,
+                None
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as persist_error:
+            print(f"Warning: Failed to persist initial execution status: {str(persist_error)}")
+
         # Start background thread
         thread = threading.Thread(target=run_batch_execution, args=(execution_id, batch_id))
         thread.daemon = True
@@ -1325,6 +1384,58 @@ def execute_batch():
         print(f"Error starting batch execution: {str(e)}")
         import traceback
         traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/analysis/batch-status/<batch_id>', methods=['GET'])
+def get_batch_status(batch_id):
+    """Get execution status for a batch (checks both active and persisted status)"""
+    try:
+        # First check if there's an active execution in memory
+        for exec_id, execution in batch_executions.items():
+            if execution.get('batch_id') == batch_id:
+                duration = int(time.time() - execution['start_time'])
+                return jsonify({
+                    'success': True,
+                    'active': True,
+                    'execution_id': exec_id,
+                    'status': execution['status'],
+                    'current': execution['current'],
+                    'total': execution['total'],
+                    'success_count': execution.get('success_count', 0),
+                    'error_count': execution.get('error_count', 0),
+                    'complete': execution['complete'],
+                    'duration': duration,
+                    'csv_available': execution.get('csv_data') is not None
+                })
+
+        # Check persisted status in database
+        conn = sqlite3.connect('analysis_batches.db')
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('SELECT * FROM execution_status WHERE batch_id = ?', (batch_id,))
+        row = c.fetchone()
+        conn.close()
+
+        if row:
+            return jsonify({
+                'success': True,
+                'active': False,
+                'execution_id': row['execution_id'],
+                'status': row['status'],
+                'current': row['current'],
+                'total': row['total'],
+                'success_count': row['success_count'],
+                'error_count': row['error_count'],
+                'complete': bool(row['complete']),
+                'started_at': row['started_at'],
+                'updated_at': row['updated_at'],
+                'error': row['error']
+            })
+
+        # No execution found
+        return jsonify({'success': True, 'active': False, 'execution_id': None})
+
+    except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/analysis/batch-progress/<execution_id>', methods=['GET'])
@@ -1389,11 +1500,41 @@ def download_batch_csv(execution_id):
         print(f"Error downloading CSV: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def persist_execution_status(batch_id, execution):
+    """Helper function to persist execution status to database"""
+    try:
+        conn = sqlite3.connect('analysis_batches.db')
+        c = conn.cursor()
+        c.execute('''
+            INSERT OR REPLACE INTO execution_status
+            (batch_id, execution_id, status, current, total, success_count, error_count,
+             started_at, updated_at, complete, success, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            batch_id,
+            execution['execution_id'],
+            execution['status'],
+            execution['current'],
+            execution['total'],
+            execution.get('success_count', 0),
+            execution.get('error_count', 0),
+            datetime.fromtimestamp(execution['start_time']).isoformat(),
+            datetime.now().isoformat(),
+            1 if execution['complete'] else 0,
+            1 if execution.get('success', False) else 0,
+            execution.get('error')
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Warning: Failed to persist execution status: {str(e)}")
+
 def run_batch_execution(execution_id, batch_id):
     """Background thread function to execute batch"""
     try:
         execution = batch_executions[execution_id]
         execution['status'] = 'Initializing...'
+        persist_execution_status(batch_id, execution)
 
         # Get batch info
         conn = sqlite3.connect('analysis_batches.db')
@@ -1409,10 +1550,26 @@ def run_batch_execution(execution_id, batch_id):
             return
 
         batch = {
-            'id': batch_row[0],
-            'name': batch_row[1],
-            'dataset_id': batch_row[2]
+            'id': batch_row[0],           # id
+            'name': batch_row[1],         # name
+            'dataset_id': batch_row[2],   # dataset_id
+            'dataset_name': batch_row[3], # dataset_name
+            'dataset_config_id': batch_row[9]  # dataset_config_id (index 9)
         }
+
+        # Get dataset configuration to find record ID field
+        if batch['dataset_config_id']:
+            c.execute('SELECT record_id_field FROM dataset_configs WHERE id = ?', (batch['dataset_config_id'],))
+            config_row = c.fetchone()
+            record_id_field = config_row[0] if config_row else None
+            print(f"Using record ID field from config: {record_id_field}")
+        else:
+            record_id_field = None
+            print("No dataset config found, using default ID fields")
+
+        # Delete old execution history for this batch (only keep latest)
+        c.execute('DELETE FROM execution_history WHERE batch_id = ?', (batch_id,))
+        conn.commit()
 
         # Get prompt configuration
         c.execute('SELECT * FROM prompts WHERE batch_id = ?', (batch_id,))
@@ -1465,6 +1622,7 @@ def run_batch_execution(execution_id, batch_id):
 
         execution['total'] = len(all_records)
         execution['status'] = f'Processing {len(all_records)} records...'
+        persist_execution_status(batch_id, execution)
 
         # Configure LLM client with global settings
         global_settings = load_settings()
@@ -1474,11 +1632,19 @@ def run_batch_execution(execution_id, batch_id):
         results = []
         success_count = 0
         error_count = 0
+        start_time = time.time()
 
         for idx, record in enumerate(all_records):
             try:
-                # Get record ID
-                record_id = record.get('Id') or record.get('id') or record.get('Name') or record.get('name') or f'Record_{idx}'
+                # Get record ID from configured field, fall back to common fields
+                if record_id_field:
+                    record_id = record.get(record_id_field) or f'Record_{idx}'
+                    if idx == 0:  # Log first record for debugging
+                        print(f"First record ID extracted from field '{record_id_field}': {record_id}")
+                else:
+                    record_id = record.get('Id') or record.get('id') or record.get('Name') or record.get('name') or f'Record_{idx}'
+                    if idx == 0:
+                        print(f"First record ID using fallback: {record_id}")
 
                 # Render prompt
                 rendered_prompt = prompt_engine.build_prompt(prompt_config['template'], record)
@@ -1521,10 +1687,44 @@ def run_batch_execution(execution_id, batch_id):
             execution['error_count'] = error_count
             execution['status'] = f'Processing record {idx + 1} of {len(all_records)}'
 
-        # Generate structured CSV
+            # Persist status every 10 records
+            if (idx + 1) % 10 == 0:
+                persist_execution_status(batch_id, execution)
+
+        # Generate structured CSV with dataset name and batch name
         execution['status'] = 'Generating CSV...'
-        csv_data = generate_structured_csv(results)
+        csv_data = generate_structured_csv(results, batch['dataset_name'], batch['name'])
         csv_filename = f"batch_{batch['name']}_{execution_id[:8]}.csv"
+
+        # Save to execution history
+        execution['status'] = 'Saving to history...'
+        try:
+            end_time = time.time()
+            execution_time = end_time - start_time
+
+            conn = sqlite3.connect('analysis_batches.db')
+            c = conn.cursor()
+            c.execute('''
+                INSERT OR REPLACE INTO execution_history
+                (batch_id, batch_name, dataset_name, total_records, success_count,
+                 error_count, execution_time, csv_data, executed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                batch['id'],
+                batch['name'],
+                batch['dataset_name'],
+                execution['total'],
+                success_count,
+                error_count,
+                execution_time,
+                csv_data,
+                datetime.now().isoformat()
+            ))
+            conn.commit()
+            conn.close()
+            print(f"Saved execution history for batch {batch['id']}")
+        except Exception as hist_error:
+            print(f"Warning: Failed to save execution history: {str(hist_error)}")
 
         # Upload to Salesforce CRM Analytics
         execution['status'] = 'Uploading to Salesforce...'
@@ -1540,6 +1740,7 @@ def run_batch_execution(execution_id, batch_id):
         execution['csv_data'] = csv_data
         execution['csv_filename'] = csv_filename
         execution['status'] = 'Complete'
+        persist_execution_status(batch_id, execution)
 
     except Exception as e:
         print(f"Error in batch execution: {str(e)}")
@@ -1548,41 +1749,59 @@ def run_batch_execution(execution_id, batch_id):
         execution['complete'] = True
         execution['success'] = False
         execution['error'] = str(e)
+        persist_execution_status(batch_id, execution)
 
-def generate_structured_csv(results):
-    """Generate CSV with structure: Record ID, Batch Name, Parameter Name, Value"""
+def generate_structured_csv(results, dataset_name='', batch_name=''):
+    """
+    Generate CSV in wide format: one row per record, one column per response field
+    Format: Record ID, [response fields as columns]
+    This allows direct joins to analytical datasets
+    """
     output = io.StringIO()
     writer = csv.writer(output)
-
-    # Write header
-    writer.writerow(['Record ID', 'Batch Name', 'Parameter Name', 'Value'])
 
     # JSON Schema metadata fields to exclude
     schema_fields = {'$schema', 'type', 'properties', 'required', 'title', 'description',
                      'definitions', 'additionalProperties', '$id', '$ref', 'items'}
 
-    # Write data
+    # First pass: collect all unique field names from all responses
+    all_fields = set()
+    for result in results:
+        response = result.get('response', {})
+        if isinstance(response, dict):
+            for field_name in response.keys():
+                if field_name not in schema_fields:
+                    all_fields.add(field_name)
+
+    # Sort fields for consistent column order
+    sorted_fields = sorted(all_fields)
+
+    # Write header: Record ID + all response fields
+    header = ['Record ID'] + sorted_fields
+    writer.writerow(header)
+
+    # Write data rows
     for result in results:
         record_id = result['record_id']
-        batch_name = result['batch_name']
         response = result.get('response', {})
 
-        if isinstance(response, dict):
-            for param_name, value in response.items():
-                # Skip JSON schema metadata fields
-                if param_name in schema_fields:
-                    continue
+        row = [record_id]
 
-                # Convert value to string
-                if isinstance(value, (dict, list)):
-                    value_str = json.dumps(value)
-                else:
-                    value_str = str(value)
+        # Add each field value in the same order as header
+        for field_name in sorted_fields:
+            value = response.get(field_name, '') if isinstance(response, dict) else ''
 
-                writer.writerow([record_id, batch_name, param_name, value_str])
-        else:
-            # Handle non-dict response
-            writer.writerow([record_id, batch_name, 'raw_response', str(response)])
+            # Convert complex values to JSON strings
+            if isinstance(value, (dict, list)):
+                value_str = json.dumps(value)
+            elif value is None:
+                value_str = ''
+            else:
+                value_str = str(value)
+
+            row.append(value_str)
+
+        writer.writerow(row)
 
     return output.getvalue()
 
@@ -1613,6 +1832,152 @@ def upload_to_crm_analytics(client, csv_data, filename):
     except Exception as e:
         print(f"Error uploading to CRM Analytics: {str(e)}")
         raise
+
+# Execution History API endpoints
+@app.route('/api/analysis/history', methods=['GET'])
+def get_execution_history():
+    """Get all execution history records"""
+    try:
+        conn = sqlite3.connect('analysis_batches.db')
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('''
+            SELECT batch_id, batch_name, dataset_name, total_records,
+                   success_count, error_count, execution_time, executed_at
+            FROM execution_history
+            ORDER BY executed_at DESC
+        ''')
+        rows = c.fetchall()
+        conn.close()
+
+        history = [dict(row) for row in rows]
+        return jsonify({'success': True, 'history': history})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/analysis/history/<batch_id>/csv', methods=['GET'])
+def download_history_csv(batch_id):
+    """Download CSV for a specific batch execution"""
+    try:
+        conn = sqlite3.connect('analysis_batches.db')
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('SELECT batch_name, csv_data FROM execution_history WHERE batch_id = ?', (batch_id,))
+        row = c.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({'success': False, 'error': 'Execution history not found'}), 404
+
+        batch_name = row['batch_name']
+        csv_data = row['csv_data']
+
+        # Return CSV file
+        from io import BytesIO
+        csv_bytes = BytesIO(csv_data.encode('utf-8'))
+
+        return send_file(
+            csv_bytes,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f'{batch_name}_results.csv'
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/analysis/history/combined-csv', methods=['GET'])
+def download_combined_csv():
+    """Download combined CSV from all batch executions, merging columns by Record ID"""
+    try:
+        conn = sqlite3.connect('analysis_batches.db')
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('''
+            SELECT batch_name, dataset_name, csv_data
+            FROM execution_history
+            ORDER BY dataset_name, executed_at DESC
+        ''')
+        rows = c.fetchall()
+        conn.close()
+
+        if not rows:
+            return jsonify({'success': False, 'error': 'No execution history found'}), 404
+
+        # Parse all CSVs and merge by Record ID
+        # Structure: {record_id: {column_name: value}}
+        merged_data = {}
+        all_columns = set(['Record ID'])  # Start with Record ID column
+
+        for row in rows:
+            batch_name = row['batch_name']
+            csv_data = row['csv_data']
+
+            # Parse CSV
+            lines = csv_data.strip().split('\n')
+            if len(lines) < 2:
+                continue
+
+            reader = csv.DictReader(io.StringIO(csv_data))
+
+            for csv_row in reader:
+                record_id = csv_row.get('Record ID', '')
+                if not record_id:
+                    continue
+
+                # Initialize record if not exists
+                if record_id not in merged_data:
+                    merged_data[record_id] = {'Record ID': record_id}
+
+                # Add all columns from this CSV (prefixed with batch name to avoid conflicts)
+                for col_name, value in csv_row.items():
+                    if col_name == 'Record ID':
+                        continue
+
+                    # Prefix column with batch name for uniqueness
+                    prefixed_col = f"{batch_name}_{col_name}"
+                    all_columns.add(prefixed_col)
+                    merged_data[record_id][prefixed_col] = value
+
+        # Sort columns for consistent output (Record ID first, then alphabetically)
+        sorted_columns = ['Record ID'] + sorted([col for col in all_columns if col != 'Record ID'])
+
+        # Generate combined CSV
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=sorted_columns, extrasaction='ignore')
+        writer.writeheader()
+
+        for record_id in sorted(merged_data.keys()):
+            # Fill missing columns with empty strings
+            row_data = {col: merged_data[record_id].get(col, '') for col in sorted_columns}
+            writer.writerow(row_data)
+
+        # Return combined CSV
+        csv_bytes = io.BytesIO(output.getvalue().encode('utf-8'))
+
+        return send_file(
+            csv_bytes,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f'all_batches_combined_results.csv'
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/analysis/history/<batch_id>', methods=['DELETE'])
+def delete_execution_history(batch_id):
+    """Delete execution history for a specific batch"""
+    try:
+        conn = sqlite3.connect('analysis_batches.db')
+        c = conn.cursor()
+        c.execute('DELETE FROM execution_history WHERE batch_id = ?', (batch_id,))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("Starting Synthetic Claims Data Generator...")

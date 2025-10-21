@@ -180,6 +180,11 @@ function setupEventListeners() {
     document.getElementById('test-connection-btn').addEventListener('click', function() {
         testConnection();
     });
+
+    // History - Download combined CSV
+    document.getElementById('download-all-csv-btn').addEventListener('click', function() {
+        downloadCombinedCSV();
+    });
 }
 
 function switchTab(tabName) {
@@ -202,6 +207,8 @@ function switchTab(tabName) {
         loadProvingGroundData();
     } else if (tabName === 'batch-execution') {
         loadBatchExecutionData();
+    } else if (tabName === 'history') {
+        loadExecutionHistory();
     } else if (tabName === 'settings') {
         loadSettings();
     }
@@ -1395,7 +1402,7 @@ function exportProvingCSV() {
         return;
     }
 
-    // Extract all unique keys from responses
+    // Extract all unique keys from responses (sorted for consistency)
     const allKeys = new Set();
     provingResults.forEach(result => {
         if (result.response && typeof result.response === 'object') {
@@ -1403,15 +1410,17 @@ function exportProvingCSV() {
         }
     });
 
-    const columns = ['record_id', ...Array.from(allKeys)];
+    // Sort columns alphabetically for consistency with backend
+    const sortedKeys = Array.from(allKeys).sort();
+    const columns = ['Record ID', ...sortedKeys];
 
-    // Build CSV content (structured format - one record per row)
+    // Build CSV content (wide format - one record per row)
     let csv = columns.join(',') + '\n';
 
     provingResults.forEach(result => {
         const row = columns.map(col => {
             let value;
-            if (col === 'record_id') {
+            if (col === 'Record ID') {
                 value = result.record_id || '';
             } else {
                 value = result.response?.[col];
@@ -1445,7 +1454,7 @@ function exportProvingCSV() {
 
 // ==================== Batch Execution Functions ====================
 
-function loadBatchExecutionData() {
+async function loadBatchExecutionData() {
     // Populate batch dropdown
     const batchSelect = document.getElementById('batch-exec-select');
     batchSelect.innerHTML = '<option value="">-- Select an analysis batch --</option>';
@@ -1457,11 +1466,56 @@ function loadBatchExecutionData() {
         batchSelect.appendChild(option);
     });
 
+    // Check for active executions
+    await checkForActiveExecutions();
+
     // Load saved batch if available
     if (batchExecBatch) {
         batchSelect.value = batchExecBatch.id;
         handleBatchExecSelection(batchExecBatch.id);
     }
+}
+
+async function checkForActiveExecutions() {
+    // Check each batch for active execution
+    for (const batch of batches) {
+        try {
+            const response = await fetch(`/api/analysis/batch-status/${batch.id}`);
+            const data = await response.json();
+
+            if (data.success && data.active && data.execution_id) {
+                // Found an active execution
+                showActiveExecutionAlert(batch, data);
+                return; // Only show one at a time
+            }
+        } catch (error) {
+            console.error(`Error checking batch ${batch.id}:`, error);
+        }
+    }
+
+    // No active executions found
+    document.getElementById('active-executions-alert').style.display = 'none';
+}
+
+function showActiveExecutionAlert(batch, statusData) {
+    const alert = document.getElementById('active-executions-alert');
+    document.getElementById('active-exec-batch-name').textContent = batch.name;
+
+    const percentage = statusData.total > 0 ? Math.round((statusData.current / statusData.total) * 100) : 0;
+    document.getElementById('active-exec-progress').textContent =
+        `${statusData.current} / ${statusData.total} records (${percentage}%)`;
+
+    alert.style.display = 'block';
+
+    // Set up "View Progress" button
+    document.getElementById('view-active-exec-btn').onclick = () => {
+        const batchSelect = document.getElementById('batch-exec-select');
+        batchSelect.value = batch.id;
+        handleBatchExecSelection(batch.id);
+
+        // Scroll to progress section
+        document.getElementById('batch-exec-progress-section').scrollIntoView({ behavior: 'smooth' });
+    };
 }
 
 async function handleBatchExecSelection(batchId) {
@@ -1508,6 +1562,25 @@ async function handleBatchExecSelection(batchId) {
         document.getElementById('batch-exec-prompt-status').textContent = 'Unknown';
         document.getElementById('batch-exec-prompt-status').className = 'badge bg-secondary';
         document.getElementById('batch-exec-run-btn').disabled = true;
+    }
+
+    // Check for active or persisted execution status
+    try {
+        const statusResponse = await fetch(`/api/analysis/batch-status/${batchId}`);
+        const statusData = await statusResponse.json();
+
+        if (statusData.success && statusData.execution_id) {
+            if (statusData.active) {
+                // Active execution in memory - start polling
+                currentExecutionId = statusData.execution_id;
+                startPolling();
+            } else if (!statusData.complete) {
+                // Persisted incomplete execution - show status
+                showPersistedExecutionStatus(statusData);
+            }
+        }
+    } catch (error) {
+        console.error('Error checking execution status:', error);
     }
 
     document.getElementById('batch-exec-info').style.display = 'block';
@@ -1706,6 +1779,194 @@ async function downloadBatchCSV() {
         console.error('Error downloading CSV:', error);
         showAlert('danger', 'Error downloading CSV: ' + error.message);
     }
+}
+
+// ============================================================================
+// History Functions
+// ============================================================================
+
+async function loadExecutionHistory() {
+    document.getElementById('history-loading').style.display = 'block';
+    document.getElementById('history-list-container').style.display = 'none';
+    document.getElementById('no-history').style.display = 'none';
+
+    try {
+        const response = await fetch('/api/analysis/history');
+        const data = await response.json();
+
+        if (data.success) {
+            displayExecutionHistory(data.history);
+        } else {
+            showAlert('danger', 'Failed to load execution history: ' + data.error);
+            document.getElementById('history-loading').style.display = 'none';
+            document.getElementById('no-history').style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error loading execution history:', error);
+        showAlert('danger', 'Error loading execution history: ' + error.message);
+        document.getElementById('history-loading').style.display = 'none';
+        document.getElementById('no-history').style.display = 'block';
+    }
+}
+
+function displayExecutionHistory(history) {
+    document.getElementById('history-loading').style.display = 'none';
+
+    if (!history || history.length === 0) {
+        document.getElementById('no-history').style.display = 'block';
+        return;
+    }
+
+    const tbody = document.getElementById('history-list-tbody');
+    tbody.innerHTML = '';
+
+    history.forEach(item => {
+        const row = document.createElement('tr');
+
+        // Format execution date
+        const executedDate = new Date(item.executed_at);
+        const formattedDate = executedDate.toLocaleString();
+
+        // Format duration
+        const durationMinutes = Math.round(item.execution_time / 60);
+        const durationSeconds = Math.round(item.execution_time % 60);
+        const formattedDuration = durationMinutes > 0
+            ? `${durationMinutes}m ${durationSeconds}s`
+            : `${durationSeconds}s`;
+
+        row.innerHTML = `
+            <td><strong>${item.batch_name}</strong></td>
+            <td>${item.dataset_name}</td>
+            <td>${formattedDate}</td>
+            <td>${item.total_records}</td>
+            <td><span class="badge bg-success">${item.success_count}</span></td>
+            <td><span class="badge bg-${item.error_count > 0 ? 'danger' : 'secondary'}">${item.error_count}</span></td>
+            <td>${formattedDuration}</td>
+            <td>
+                <button class="btn btn-success btn-sm me-1" onclick="viewBatchExecution('${item.batch_id}')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-play-circle" viewBox="0 0 16 16">
+                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                        <path d="M6.271 5.055a.5.5 0 0 1 .52.038l3.5 2.5a.5.5 0 0 1 0 .814l-3.5 2.5A.5.5 0 0 1 6 10.5v-5a.5.5 0 0 1 .271-.445"/>
+                    </svg>
+                    View Execution
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="downloadHistoryCSV('${item.batch_id}')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+                        <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+                        <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
+                    </svg>
+                    Download CSV
+                </button>
+            </td>
+        `;
+
+        tbody.appendChild(row);
+    });
+
+    document.getElementById('history-list-container').style.display = 'block';
+}
+
+async function downloadHistoryCSV(batchId) {
+    try {
+        const response = await fetch(`/api/analysis/history/${batchId}/csv`);
+
+        if (!response.ok) {
+            const data = await response.json();
+            showAlert('danger', 'Failed to download CSV: ' + (data.error || 'Unknown error'));
+            return;
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'batch_results.csv';
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename="(.+)"/);
+            if (match) filename = match[1];
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        showAlert('success', 'CSV downloaded successfully');
+    } catch (error) {
+        console.error('Error downloading CSV:', error);
+        showAlert('danger', 'Error downloading CSV: ' + error.message);
+    }
+}
+
+async function downloadCombinedCSV() {
+    try {
+        const response = await fetch('/api/analysis/history/combined-csv');
+
+        if (!response.ok) {
+            const data = await response.json();
+            showAlert('danger', 'Failed to download combined CSV: ' + (data.error || 'Unknown error'));
+            return;
+        }
+
+        // Download the file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'all_batches_combined_results.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        showAlert('success', 'Combined CSV downloaded successfully');
+    } catch (error) {
+        console.error('Error downloading combined CSV:', error);
+        showAlert('danger', 'Error downloading combined CSV: ' + error.message);
+    }
+}
+
+function viewBatchExecution(batchId) {
+    // Find the batch in our batches array
+    const batch = batches.find(b => b.id === batchId);
+
+    if (!batch) {
+        showAlert('warning', 'Batch not found');
+        return;
+    }
+
+    // Switch to Batch Execution tab
+    switchTab('batch-execution');
+
+    // Select the batch in the dropdown
+    const batchSelect = document.getElementById('batch-exec-select');
+    batchSelect.value = batchId;
+
+    // Trigger the selection handler to load batch details
+    handleBatchExecSelection(batchId);
+}
+
+function showPersistedExecutionStatus(statusData) {
+    // Show progress section with persisted data
+    document.getElementById('batch-exec-progress-section').style.display = 'block';
+    document.getElementById('batch-exec-current').textContent = statusData.current;
+    document.getElementById('batch-exec-total').textContent = statusData.total;
+
+    const percentage = statusData.total > 0 ? Math.round((statusData.current / statusData.total) * 100) : 0;
+    document.getElementById('batch-exec-progress-bar').style.width = `${percentage}%`;
+    document.getElementById('batch-exec-progress-bar').textContent = `${percentage}%`;
+
+    document.getElementById('batch-exec-status-message').textContent =
+        statusData.status + ' (Server-side execution - last updated: ' +
+        new Date(statusData.updated_at).toLocaleString() + ')';
+
+    document.getElementById('batch-exec-eta').textContent = 'Unknown (server-side)';
+
+    showAlert('info', 'This batch has a persisted execution status. The execution may have been interrupted.');
 }
 
 // ============================================================================
