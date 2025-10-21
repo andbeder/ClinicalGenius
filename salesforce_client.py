@@ -246,8 +246,16 @@ class SalesforceClient:
             traceback.print_exc()
             raise
 
-    def query_dataset(self, dataset_id: str, fields: List[str], limit: int = 100, filters: Optional[Dict] = None) -> List[Dict]:
-        """Query CRM Analytics dataset using SAQL"""
+    def query_dataset(self, dataset_id: str, fields: List[str], limit: int = 100, filters: Optional[Dict] = None, saql_filter: Optional[str] = None) -> List[Dict]:
+        """Query CRM Analytics dataset using SAQL
+
+        Args:
+            dataset_id: CRM Analytics dataset ID
+            fields: List of field names to select
+            limit: Maximum number of records to return
+            filters: Dictionary of field filters (converted to SAQL 'in' or '==' operators)
+            saql_filter: Raw SAQL filter statement (e.g., "q = filter q by 'Status' == 'Active';")
+        """
         try:
             # First, get the dataset to retrieve the currentVersionId
             dataset_url = f"{self.instance_url}/services/data/{self.api_version}/wave/datasets/{dataset_id}"
@@ -265,6 +273,15 @@ class SalesforceClient:
             # Build SAQL query using dataset_id/version_id format
             saql = f'q = load "{dataset_id}/{version_id}";'
 
+            # Add custom SAQL filter from dataset configuration (if provided)
+            if saql_filter and saql_filter.strip():
+                # Ensure the filter is properly formatted
+                filter_str = saql_filter.strip()
+                if not filter_str.endswith(';'):
+                    filter_str += ';'
+                saql += f'\n{filter_str}'
+
+            # Add programmatic filters from parameters
             if filters:
                 # Add filters if provided
                 filter_conditions = []

@@ -1216,6 +1216,7 @@ def execute_proving_ground():
             return jsonify({'success': False, 'error': 'Dataset configuration not found. Please configure the dataset first.'}), 404
 
         record_id_field = dataset_config['record_id_field']
+        saql_filter = dataset_config.get('saql_filter', '')  # Get SAQL filter from dataset config
 
         # Extract fields used in the prompt template
         prompt_engine = PromptEngine()
@@ -1235,6 +1236,7 @@ def execute_proving_ground():
         print(f"Template fields: {template_fields}")
         print(f"Record ID field: {record_id_field}")
         print(f"Query fields: {query_fields}")
+        print(f"SAQL filter from config: {saql_filter}")
 
         # Filter out empty record IDs (from trailing newlines, etc.)
         record_ids = [rid.strip() for rid in record_ids if rid and rid.strip()]
@@ -1248,9 +1250,16 @@ def execute_proving_ground():
         print(f"Querying {len(record_ids)} record IDs: {record_ids[:10]}...")  # Show first 10
 
         # Query all records at once using 'in' filter (much more efficient than individual queries)
+        # Also apply the dataset's SAQL filter to ensure we only get the configured subset
         try:
             filters = {record_id_field: record_ids}  # Pass list for 'in' operator
-            matched_records = client.query_dataset(batch['dataset_id'], query_fields, limit=len(record_ids), filters=filters)
+            matched_records = client.query_dataset(
+                batch['dataset_id'],
+                query_fields,
+                limit=len(record_ids),
+                filters=filters,
+                saql_filter=saql_filter  # Apply dataset filter
+            )
             print(f"Found {len(matched_records)} matching records")
         except Exception as e:
             print(f"Error querying records: {str(e)}")

@@ -1,5 +1,5 @@
 {
-  "provider": "openai",
+  "provider": "lm_studio",
   "endpoint": "http://localhost:1234",
   "model": "gpt-4o-mini",
   "temperature": 0.2,

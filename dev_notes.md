@@ -1,6 +1,45 @@
 # Development Notes - Clinical Genius
 
-## Latest Update: Nested Object Support with Dot Notation Flattening (October 21, 2025)
+## Latest Update: Apply Dataset SAQL Filter to Proving Ground (October 21, 2025)
+
+### Issue
+Proving Ground was not applying the dataset's SAQL filter when querying records by ID. This caused problems in datasets with duplicate record IDs across different filtered subsets (e.g., Test vs Production data in same dataset).
+
+**Example Problem:**
+- Dataset has records with `Name = "REC-001"` in both Test and Production environments
+- Dataset config has filter: `q = filter q by 'Environment' == "Production";`
+- Proving Ground would return the Test record instead of Production record
+
+### Fix
+
+**1. Updated `query_dataset()` method (salesforce_client.py:249)**
+- Added `saql_filter` parameter to accept raw SAQL filter string
+- SAQL filter applied BEFORE programmatic filters (record ID filter)
+- Ensures dataset configuration filter is always respected
+
+**2. Updated Proving Ground endpoint (app.py:1219, 1256-1262)**
+- Reads `saql_filter` from dataset configuration
+- Passes filter to `query_dataset()` call
+- Logs filter being applied for debugging
+
+**SAQL Query Order:**
+```saql
+q = load "dataset_id/version_id";
+q = filter q by 'Environment' == "Production";  # Dataset config filter
+q = filter q by 'Name' in ["REC-001", "REC-002"];  # Record ID filter
+q = foreach q generate Name, Status, Amount;
+q = limit q 2;
+```
+
+**Result:**
+- ✅ Proving Ground now respects dataset filters
+- ✅ Only returns records matching both dataset filter AND record ID
+- ✅ Prevents duplicate/incorrect records from being processed
+- ✅ Consistent with Batch Execution behavior
+
+---
+
+## Previous Update: Nested Object Support with Dot Notation Flattening (October 21, 2025)
 
 ### Challenge
 LLM responses often contain nested objects (e.g., conditional fields based on category):
