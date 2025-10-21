@@ -1760,10 +1760,44 @@ def run_batch_execution(execution_id, batch_id):
         execution['error'] = str(e)
         persist_execution_status(batch_id, execution)
 
+def flatten_nested_dict(obj, parent_key='', sep='.'):
+    """
+    Flatten a nested dictionary into dot-notation keys.
+    Example: {'a': {'b': 1}} -> {'a.b': 1}
+
+    Args:
+        obj: Dictionary or value to flatten
+        parent_key: Parent key for recursion
+        sep: Separator for nested keys (default: '.')
+
+    Returns:
+        Flattened dictionary
+    """
+    items = []
+
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            new_key = f"{parent_key}{sep}{key}" if parent_key else key
+
+            if isinstance(value, dict):
+                # Recursively flatten nested dicts
+                items.extend(flatten_nested_dict(value, new_key, sep=sep).items())
+            elif isinstance(value, list):
+                # Convert lists to JSON strings (can't easily flatten arrays)
+                items.append((new_key, json.dumps(value)))
+            else:
+                items.append((new_key, value))
+    else:
+        # Not a dict, return as-is
+        items.append((parent_key, obj))
+
+    return dict(items)
+
 def generate_structured_csv(results, dataset_name='', batch_name=''):
     """
     Generate CSV in wide format: one row per record, one column per response field
     Format: Record ID, [response fields as columns]
+    Nested objects are flattened with dot notation (e.g., surgeryRelatedDetails.primaryProcedure)
     This allows direct joins to analytical datasets
     """
     output = io.StringIO()
@@ -1773,14 +1807,29 @@ def generate_structured_csv(results, dataset_name='', batch_name=''):
     schema_fields = {'$schema', 'type', 'properties', 'required', 'title', 'description',
                      'definitions', 'additionalProperties', '$id', '$ref', 'items'}
 
-    # First pass: collect all unique field names from all responses
+    # First pass: flatten all responses and collect unique field names
+    flattened_results = []
     all_fields = set()
+
     for result in results:
         response = result.get('response', {})
+
         if isinstance(response, dict):
-            for field_name in response.keys():
+            # Flatten nested objects
+            flattened_response = flatten_nested_dict(response)
+
+            # Collect field names (excluding schema fields)
+            for field_name in flattened_response.keys():
                 if field_name not in schema_fields:
                     all_fields.add(field_name)
+        else:
+            flattened_response = {'raw_response': str(response)}
+            all_fields.add('raw_response')
+
+        flattened_results.append({
+            'record_id': result['record_id'],
+            'flattened_response': flattened_response
+        })
 
     # Sort fields for consistent column order
     sorted_fields = sorted(all_fields)
@@ -1790,20 +1839,18 @@ def generate_structured_csv(results, dataset_name='', batch_name=''):
     writer.writerow(header)
 
     # Write data rows
-    for result in results:
+    for result in flattened_results:
         record_id = result['record_id']
-        response = result.get('response', {})
+        flattened_response = result['flattened_response']
 
         row = [record_id]
 
         # Add each field value in the same order as header
         for field_name in sorted_fields:
-            value = response.get(field_name, '') if isinstance(response, dict) else ''
+            value = flattened_response.get(field_name, '')
 
-            # Convert complex values to JSON strings
-            if isinstance(value, (dict, list)):
-                value_str = json.dumps(value)
-            elif value is None:
+            # Convert to string
+            if value is None:
                 value_str = ''
             else:
                 value_str = str(value)

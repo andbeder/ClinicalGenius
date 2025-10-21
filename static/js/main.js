@@ -1335,6 +1335,33 @@ async function runProvingGroundPrompt() {
     }
 }
 
+function flattenNestedObject(obj, parentKey = '', sep = '.') {
+    /**
+     * Flatten a nested object into dot-notation keys
+     * Example: {a: {b: 1}} -> {'a.b': 1}
+     */
+    let result = {};
+
+    for (let key in obj) {
+        if (!obj.hasOwnProperty(key)) continue;
+
+        const newKey = parentKey ? `${parentKey}${sep}${key}` : key;
+        const value = obj[key];
+
+        if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+            // Recursively flatten nested objects
+            Object.assign(result, flattenNestedObject(value, newKey, sep));
+        } else if (Array.isArray(value)) {
+            // Convert arrays to JSON strings
+            result[newKey] = JSON.stringify(value);
+        } else {
+            result[newKey] = value;
+        }
+    }
+
+    return result;
+}
+
 function displayProvingResults(results) {
     document.getElementById('proving-results-loading').style.display = 'none';
     document.getElementById('proving-results-error').style.display = 'none';
@@ -1345,15 +1372,28 @@ function displayProvingResults(results) {
         return;
     }
 
-    // Extract all unique keys from all results to build table columns
+    // Flatten all nested responses and collect unique keys
+    const flattenedResults = [];
     const allKeys = new Set();
+
     results.forEach(result => {
+        let flattened = {};
+
         if (result.response && typeof result.response === 'object') {
-            Object.keys(result.response).forEach(key => allKeys.add(key));
+            // Flatten nested objects
+            flattened = flattenNestedObject(result.response);
+            Object.keys(flattened).forEach(key => allKeys.add(key));
         }
+
+        flattenedResults.push({
+            record_id: result.record_id,
+            flattened: flattened
+        });
     });
 
-    const columns = ['record_id', ...Array.from(allKeys)];
+    // Sort columns alphabetically
+    const sortedKeys = Array.from(allKeys).sort();
+    const columns = ['record_id', ...sortedKeys];
 
     // Build table header
     const thead = document.getElementById('proving-results-thead');
@@ -1370,7 +1410,7 @@ function displayProvingResults(results) {
     const tbody = document.getElementById('proving-results-tbody');
     tbody.innerHTML = '';
 
-    results.forEach(result => {
+    flattenedResults.forEach(result => {
         const row = document.createElement('tr');
 
         columns.forEach(col => {
@@ -1378,9 +1418,9 @@ function displayProvingResults(results) {
             if (col === 'record_id') {
                 td.textContent = result.record_id || 'Unknown';
             } else {
-                const value = result.response?.[col];
+                const value = result.flattened[col];
                 if (value !== undefined && value !== null) {
-                    td.textContent = typeof value === 'object' ? JSON.stringify(value) : value;
+                    td.textContent = value;
                 } else {
                     td.textContent = '-';
                 }
@@ -1402,12 +1442,23 @@ function exportProvingCSV() {
         return;
     }
 
-    // Extract all unique keys from responses (sorted for consistency)
+    // Flatten all nested responses and collect unique keys
     const allKeys = new Set();
+    const flattenedResults = [];
+
     provingResults.forEach(result => {
+        let flattened = {};
+
         if (result.response && typeof result.response === 'object') {
-            Object.keys(result.response).forEach(key => allKeys.add(key));
+            // Flatten nested objects
+            flattened = flattenNestedObject(result.response);
+            Object.keys(flattened).forEach(key => allKeys.add(key));
         }
+
+        flattenedResults.push({
+            record_id: result.record_id,
+            flattened: flattened
+        });
     });
 
     // Sort columns alphabetically for consistency with backend
@@ -1417,20 +1468,18 @@ function exportProvingCSV() {
     // Build CSV content (wide format - one record per row)
     let csv = columns.join(',') + '\n';
 
-    provingResults.forEach(result => {
+    flattenedResults.forEach(result => {
         const row = columns.map(col => {
             let value;
             if (col === 'Record ID') {
                 value = result.record_id || '';
             } else {
-                value = result.response?.[col];
+                value = result.flattened[col];
             }
 
             // Handle different value types
             if (value === undefined || value === null) {
                 return '';
-            } else if (typeof value === 'object') {
-                return '"' + JSON.stringify(value).replace(/"/g, '""') + '"';
             } else {
                 return '"' + String(value).replace(/"/g, '""') + '"';
             }

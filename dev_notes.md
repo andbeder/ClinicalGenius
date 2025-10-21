@@ -1,6 +1,58 @@
 # Development Notes - Clinical Genius
 
-## Latest Update: Fixed Proving Ground SAQL Query with Multiple Record IDs (October 21, 2025)
+## Latest Update: Nested Object Support with Dot Notation Flattening (October 21, 2025)
+
+### Challenge
+LLM responses often contain nested objects (e.g., conditional fields based on category):
+```json
+{
+  "caseCategory": "Surgery Related | Diagnosis Related",
+  "surgeryRelatedDetails": {
+    "primaryProcedure": "string",
+    "initialComplication": "string",
+    "injuryPhaseOfCare": "Pre-operative | Intra-operative"
+  },
+  "diagnosisRelatedDetails": {
+    "initialDiagnosis": "string",
+    "diagnosticTestsOrdered": "Yes | No"
+  }
+}
+```
+
+This creates a problem for CSV export and analytics - can't have nested objects in tabular data.
+
+### Solution: Dot Notation Flattening
+
+**Backend (app.py:1763-1862)**
+- Added `flatten_nested_dict()` function to recursively flatten nested objects
+- Example: `{"surgeryRelatedDetails": {"primaryProcedure": "Appendectomy"}}`
+  → `{"surgeryRelatedDetails.primaryProcedure": "Appendectomy"}`
+- Updated `generate_structured_csv()` to flatten all responses before writing CSV
+- Arrays converted to JSON strings (can't easily flatten)
+
+**Frontend (static/js/main.js:1338-1488)**
+- Added `flattenNestedObject()` JavaScript function (mirrors backend logic)
+- Updated `displayProvingResults()` to flatten objects before displaying in table
+- Updated `exportProvingCSV()` to use flattened structure
+
+**Result:**
+CSV columns now look like:
+```csv
+Record ID,caseCategory,diagnosisRelatedDetails.diagnosticTestsOrdered,diagnosisRelatedDetails.finalDiagnosis,surgeryRelatedDetails.primaryProcedure
+REC-001,Surgery Related,Yes,Infection,Appendectomy
+REC-002,Diagnosis Related,No,Diabetes,
+```
+
+**Benefits:**
+- ✅ Works with complex nested schemas
+- ✅ Each nested field becomes its own column
+- ✅ Analytics-ready - can aggregate/filter on any nested field
+- ✅ Consistent between Proving Ground display and Batch CSV export
+- ✅ Empty nested objects don't break CSV structure
+
+---
+
+## Previous Update: Fixed Proving Ground SAQL Query with Multiple Record IDs (October 21, 2025)
 
 ### Issue
 When copying/pasting multiple record IDs from Excel (newline-delimited), the SAQL query would:
