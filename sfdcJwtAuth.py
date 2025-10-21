@@ -12,11 +12,15 @@ import json
 import time
 import tempfile
 import hashlib
+import platform
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+# Detect if running on Windows
+IS_WINDOWS = platform.system() == 'Windows'
 
 # In-memory token cache
 _token_cache = {
@@ -24,6 +28,26 @@ _token_cache = {
     'instance_url': None,
     'expiry': None
 }
+
+
+def run_sf_command(cmd_args, **kwargs):
+    """
+    Run Salesforce CLI command with platform-specific handling
+
+    Args:
+        cmd_args: List of command arguments (e.g., ['sf', 'org', 'display'])
+        **kwargs: Additional arguments to pass to subprocess.run
+
+    Returns:
+        subprocess.CompletedProcess
+    """
+    if IS_WINDOWS:
+        # On Windows, use shell=True to find sf.cmd
+        cmd_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in cmd_args)
+        return subprocess.run(cmd_str, shell=True, **kwargs)
+    else:
+        # On Unix-like systems, use the command list directly
+        return subprocess.run(cmd_args, **kwargs)
 
 
 def decrypt_jwt_key(encrypted_key_path: str, password: str) -> str:
@@ -164,7 +188,7 @@ def authorize() -> dict:
                 '--set-default'
             ]
 
-            result = subprocess.run(
+            result = run_sf_command(
                 cmd,
                 capture_output=True,
                 text=True,
@@ -184,7 +208,7 @@ def authorize() -> dict:
                 os.unlink(temp_key_file)
 
         # 4) Retrieve the org info as JSON
-        result = subprocess.run(
+        result = run_sf_command(
             ['sf', 'org', 'display', '--target-org', alias, '--json'],
             capture_output=True,
             text=True,
