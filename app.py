@@ -599,6 +599,7 @@ def init_db():
             name TEXT NOT NULL,
             dataset_id TEXT NOT NULL,
             dataset_name TEXT NOT NULL,
+            dataset_config_id TEXT,
             description TEXT,
             status TEXT DEFAULT 'pending',
             record_count INTEGER DEFAULT 0,
@@ -628,6 +629,24 @@ def init_db():
 # Initialize database on startup
 init_db()
 
+def migrate_db():
+    """Migrate database schema for existing installations"""
+    conn = sqlite3.connect('analysis_batches.db')
+    c = conn.cursor()
+
+    # Check if dataset_config_id column exists
+    c.execute("PRAGMA table_info(batches)")
+    columns = [col[1] for col in c.fetchall()]
+
+    if 'dataset_config_id' not in columns:
+        print("Running migration: Adding dataset_config_id column to batches table")
+        c.execute('ALTER TABLE batches ADD COLUMN dataset_config_id TEXT')
+        conn.commit()
+
+    conn.close()
+
+migrate_db()
+
 @app.route('/api/analysis/batches', methods=['GET', 'POST'])
 def analysis_batches():
     """Get all batches or create a new batch"""
@@ -649,6 +668,7 @@ def analysis_batches():
             data = request.json
             name = data.get('name')
             dataset_id = data.get('dataset_id')
+            dataset_config_id = data.get('dataset_config_id')
             description = data.get('description', '')
 
             if not name or not dataset_id:
@@ -669,9 +689,9 @@ def analysis_batches():
             conn = sqlite3.connect('analysis_batches.db')
             c = conn.cursor()
             c.execute('''
-                INSERT INTO batches (id, name, dataset_id, dataset_name, description, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (batch_id, name, dataset_id, dataset['name'], description, 'pending', now, now))
+                INSERT INTO batches (id, name, dataset_id, dataset_name, dataset_config_id, description, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (batch_id, name, dataset_id, dataset['name'], dataset_config_id, description, 'pending', now, now))
             conn.commit()
             conn.close()
 
@@ -708,6 +728,54 @@ def analysis_batch(batch_id):
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/analysis/batches/<batch_id>/fields', methods=['GET'])
+def get_batch_fields(batch_id):
+    """Get fields for a batch from its dataset configuration"""
+    try:
+        conn = sqlite3.connect('analysis_batches.db')
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Get batch to find dataset_config_id
+        c.execute('SELECT * FROM batches WHERE id = ?', (batch_id,))
+        batch = c.fetchone()
+
+        if not batch:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Batch not found'}), 404
+
+        dataset_config_id = batch['dataset_config_id']
+
+        # If no dataset config ID, fall back to all fields from CRM dataset
+        if not dataset_config_id:
+            conn.close()
+            client = get_sf_client()
+            fields = client.get_dataset_fields(batch['dataset_id'])
+            return jsonify({'success': True, 'fields': fields})
+
+        # Get dataset configuration
+        c.execute('SELECT * FROM dataset_configs WHERE id = ?', (dataset_config_id,))
+        config = c.fetchone()
+        conn.close()
+
+        if not config:
+            return jsonify({'success': False, 'error': 'Dataset configuration not found'}), 404
+
+        # Get all fields from CRM dataset
+        client = get_sf_client()
+        all_fields = client.get_dataset_fields(config['crm_dataset_id'])
+
+        # Parse selected fields from config
+        import json
+        selected_field_names = json.loads(config['selected_fields'])
+
+        # Filter to only selected fields
+        filtered_fields = [f for f in all_fields if f['name'] in selected_field_names]
+
+        return jsonify({'success': True, 'fields': filtered_fields})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Prompt Configuration API endpoints
 @app.route('/api/analysis/prompts', methods=['POST'])

@@ -1,6 +1,208 @@
 # Development Notes - Clinical Genius
 
-## Latest Update: Multiple Dataset Management (October 21, 2025)
+## Latest Update: Prompt Builder Field Filtering (October 21, 2025)
+
+### Fixed: Prompt Builder Now Shows Only Selected Fields
+
+**Problem**: Prompt Builder was displaying all fields from the CRM Analytics dataset, not just the fields selected in the dataset configuration.
+
+**Solution**: Implemented batch-to-config linking and field filtering:
+
+**Changes Made**:
+
+1. **Database Schema Update** (`app.py`):
+   - Added `dataset_config_id` column to `batches` table
+   - Created migration function to add column to existing databases
+   - Updated batch creation to store the dataset configuration ID
+
+2. **New API Endpoint** (`app.py`):
+   - Added `GET /api/analysis/batches/<batch_id>/fields`
+   - Returns only the fields selected in the dataset configuration
+   - Falls back to all fields if no config is linked (backward compatibility)
+
+3. **Frontend Updates** (`main.js`):
+   - Updated `createNewAnalysis()` to pass `dataset_config_id` when creating batch
+   - Modified `loadDatasetFieldsForPrompt()` to use new batch-specific fields endpoint
+   - Changed parameter from `datasetId` to `batchId`
+
+**Technical Details**:
+```python
+# New endpoint filters fields based on dataset configuration
+@app.route('/api/analysis/batches/<batch_id>/fields')
+def get_batch_fields(batch_id):
+    # Get batch -> find dataset_config_id
+    # Get config -> parse selected_fields JSON
+    # Filter all_fields to only selected fields
+    # Return filtered list
+```
+
+**Migration**:
+- Existing batches without `dataset_config_id` will fall back to showing all fields
+- New batches created after this update will only show configured fields
+- No data loss or breaking changes
+
+**Benefits**:
+- Cleaner prompt builder interface with only relevant fields
+- Consistency between dataset configuration and prompt building
+- Reduces confusion when working with datasets that have many fields
+
+---
+
+## Previous Update: LLM Response Parsing & Preview Enhancements (October 21, 2025)
+
+### Major Changes: LM Studio JSON Extraction & Preview Record Selection
+
+#### 1. LM Studio Response Parsing Improvements
+**Problem**: LM Studio models were returning extra text, special tokens, and JSON schema metadata mixed with actual response data.
+
+**Solution**: Implemented robust JSON extraction in `extract_json_from_llm_response()` function:
+
+- **Brace-Matching Algorithm**: Finds the last `}` in the response and works backwards to find its matching `{`, extracting the complete JSON object
+- **Schema Metadata Removal**: Automatically filters out JSON schema fields (`$schema`, `type`, `properties`, `required`, etc.) from responses
+- **Special Token Handling**: Works with any LM Studio output format, regardless of special tokens like `<|constrain|>`, `<|end|>`, `<|start|>`, `<|channel|>`, etc.
+- **Thinking Text Ignored**: All reasoning/thinking text before the JSON is automatically discarded
+
+**Example Transformation**:
+```
+Input (from LM Studio):
+Could be "Cholecystitis"... Let's choose "Acute appendicitis".<|constrain|>JSON code:<|end|>
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {...},
+  "required": ["primaryDiagnosis"],
+  "primaryDiagnosis": "Acute appendicitis"
+}
+
+Output (cleaned):
+{"primaryDiagnosis": "Acute appendicitis"}
+```
+
+**Applied To**:
+- Prompt preview execution
+- Proving Ground execution
+- Batch execution
+- Schema generation
+
+#### 2. Preview Modal Enhancement
+**Previous Behavior**: Preview button immediately executed on random sample record
+**New Behavior**: Two-step preview process with record selection
+
+**Features**:
+- **Record ID Input**: Optional text field to specify exact record to preview
+- **Random Fallback**: Leave blank to use random sample (original behavior)
+- **Execute Button**: Explicit button to run preview after choosing record
+- **Dataset Configuration Integration**: Uses the Record ID field defined in dataset configuration
+
+**Implementation**:
+- Frontend: Split `previewPrompt()` into modal opening and `executePreview()` for execution
+- Backend: Updated `/api/analysis/preview-prompt-execute` to accept optional `record_id` parameter
+- Database: Queries `dataset_configs` table to get Record ID field name for filtering
+
+#### 3. SAQL Filter Syntax Fix
+**Issue**: SAQL filters were using incorrect quote syntax
+**Fix**: Changed field names from double quotes to single quotes in filter conditions
+
+```sql
+-- Before (incorrect):
+q = filter q by "Name" == "020162";
+
+-- After (correct):
+q = filter q by 'Name' == "020162";
+```
+
+**Location**: `salesforce_client.py` - `query_dataset()` method
+
+#### 4. LM Studio Timeout Extension
+**Previous**: 60 seconds (1 minute)
+**New**: 600 seconds (10 minutes)
+
+**Reason**: Complex prompts with large context can take several minutes to process
+**Affected Methods**:
+- `_generate_lmstudio()`
+- `_generate_lmstudio_chat()`
+
+### Technical Implementation Details
+
+#### JSON Extraction Algorithm (app.py)
+```python
+def extract_json_from_llm_response(response: str) -> str:
+    # Find last '}' and work backwards to matching '{'
+    last_brace = response.rfind('}')
+    brace_count = 0
+    for i in range(last_brace, -1, -1):
+        if response[i] == '}': brace_count += 1
+        elif response[i] == '{':
+            brace_count -= 1
+            if brace_count == 0:
+                json_str = response[i:last_brace+1]
+                # Parse and remove schema fields
+                parsed = json.loads(json_str)
+                schema_fields = {'$schema', 'type', 'properties', ...}
+                cleaned = {k: v for k, v in parsed.items() if k not in schema_fields}
+                return json.dumps(cleaned)
+```
+
+#### Preview Modal Workflow (main.html + main.js)
+1. User clicks "Preview with Sample Record" button
+2. Modal opens with Record ID input field visible
+3. User optionally enters specific Record ID or leaves blank
+4. User clicks "Execute Preview" button
+5. Backend queries for specific record or random sample
+6. Results displayed in modal
+
+#### Backend Preview Logic (app.py)
+```python
+# Get dataset configuration to find record ID field
+dataset_config = get_dataset_config(batch['dataset_id'])
+record_id_field = dataset_config['record_id_field']
+
+# Query by specific record or random sample
+if record_id:
+    filters = {record_id_field: record_id}
+    sample_records = client.query_dataset(batch['dataset_id'], field_names,
+                                         limit=1, filters=filters)
+else:
+    sample_records = client.query_dataset(batch['dataset_id'], field_names, limit=1)
+```
+
+### Files Modified
+
+1. **app.py**:
+   - Enhanced `extract_json_from_llm_response()` with brace-matching algorithm
+   - Added `import re` for pattern matching (though ultimately not needed)
+   - Updated `preview_prompt_execute()` to support optional `record_id` parameter
+   - Query dataset configuration to get Record ID field name
+
+2. **lm_studio_client.py**:
+   - Increased timeout from 60 to 600 seconds in `_generate_lmstudio()`
+   - Increased timeout from 60 to 600 seconds in `_generate_lmstudio_chat()`
+
+3. **salesforce_client.py**:
+   - Fixed SAQL filter syntax: `'FieldName' == "value"` instead of `"FieldName" == "value"`
+
+4. **templates/main.html**:
+   - Added Record ID input field to preview modal
+   - Added "Execute Preview" button
+   - Changed preview loading state to be hidden by default
+   - Added record selection section to modal
+
+5. **static/js/main.js**:
+   - Split `previewPrompt()` - now only opens modal and resets state
+   - Created `executePreview()` - executes preview with optional record ID
+   - Added event listener for "Execute Preview" button
+
+### Benefits
+
+1. **Reliable JSON Parsing**: No longer breaks on LM Studio's special tokens or thinking text
+2. **Clean Response Data**: Automatic removal of JSON schema metadata fields
+3. **Flexible Testing**: Can test prompts on specific records or random samples
+4. **Longer Processing Time**: 10-minute timeout accommodates complex prompts
+5. **Correct SAQL Queries**: Fixed syntax ensures filters work properly
+
+---
+
+## Previous Update: Multiple Dataset Management (October 21, 2025)
 
 ### Major Changes: Dataset Configuration Refactoring
 

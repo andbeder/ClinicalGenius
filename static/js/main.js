@@ -778,6 +778,7 @@ async function createNewAnalysis() {
                 name: name,
                 dataset_id: config.crm_dataset_id,
                 dataset_name: config.crm_dataset_name,
+                dataset_config_id: config.id,
                 description: description
             })
         });
@@ -899,19 +900,19 @@ async function handlePromptBatchSelection(batchId) {
     document.getElementById('prompt-batch-info').style.display = 'block';
 
     // Load dataset fields
-    await loadDatasetFieldsForPrompt(batch.dataset_id);
+    await loadDatasetFieldsForPrompt(batchId);
 
     // Load saved prompt configuration
     await loadPromptConfig(batchId);
 }
 
-async function loadDatasetFieldsForPrompt(datasetId) {
+async function loadDatasetFieldsForPrompt(batchId) {
     document.getElementById('no-batch-selected').style.display = 'none';
     document.getElementById('dataset-fields-loading').style.display = 'block';
     document.getElementById('dataset-fields-container').style.display = 'none';
 
     try {
-        const response = await fetch(`/api/crm-analytics/datasets/${datasetId}/fields`);
+        const response = await fetch(`/api/analysis/batches/${batchId}/fields`);
         const data = await response.json();
 
         if (data.success) {
