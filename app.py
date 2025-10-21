@@ -38,33 +38,46 @@ def extract_json_from_llm_response(response: str) -> str:
     Extract JSON from LLM response, handling special tokens and extra text.
 
     Handles:
-    - Special tokens like <|end|>, <|start|>, <|channel|>, <|message|>
+    - Special tokens like <|end|>, <|start|>, <|channel|>, <|message|>, <|constrain|>
     - Markdown code blocks (```json ... ```)
     - Extra explanatory text before/after JSON
 
+    Strategy: Find the last '}' and work backwards to find its matching '{'.
+    This assumes the JSON object is the last thing in the response.
+
     Returns cleaned JSON string ready for parsing.
     """
-    # Remove special tokens (e.g., <|end|>, <|start|>, <|channel|>, <|message|>)
-    clean_response = re.sub(r'<\|[^|]+\|>', '', response)
+    # Find the last '}' in the response
+    last_brace = response.rfind('}')
+    if last_brace == -1:
+        # No closing brace found, return as-is
+        return response.strip()
 
-    # Remove markdown code blocks
-    clean_response = clean_response.strip()
-    if '```' in clean_response:
-        lines = clean_response.split('\n')
-        clean_response = '\n'.join(lines[1:-1]) if len(lines) > 2 else clean_response
-        clean_response = clean_response.replace('```json', '').replace('```', '').strip()
+    # Work backwards to find the matching '{'
+    brace_count = 0
+    for i in range(last_brace, -1, -1):
+        if response[i] == '}':
+            brace_count += 1
+        elif response[i] == '{':
+            brace_count -= 1
+            if brace_count == 0:
+                # Found the matching opening brace
+                json_str = response[i:last_brace+1]
 
-    # Try to find JSON object - search from end for last occurrence of {...}
-    # This regex finds properly nested JSON objects
-    json_pattern = r'\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}'
-    matches = list(re.finditer(json_pattern, clean_response))
+                # Parse and clean the JSON to remove schema metadata
+                try:
+                    parsed = json.loads(json_str)
+                    # Remove JSON schema fields if they exist
+                    schema_fields = {'$schema', 'type', 'properties', 'required', 'title',
+                                   'description', 'definitions', 'additionalProperties', '$id', '$ref', 'items'}
+                    cleaned = {k: v for k, v in parsed.items() if k not in schema_fields}
+                    return json.dumps(cleaned)
+                except json.JSONDecodeError:
+                    # If parsing fails, return as-is
+                    return json_str
 
-    if matches:
-        # Return the last match (most likely to be the actual JSON response)
-        return matches[-1].group()
-
-    # If no JSON found, return cleaned response as-is
-    return clean_response.strip()
+    # If no matching brace found, return original
+    return response.strip()
 
 def get_sf_client():
     """Get or create Salesforce client with authentication"""
@@ -813,12 +826,13 @@ def preview_prompt():
 
 @app.route('/api/analysis/preview-prompt-execute', methods=['POST'])
 def preview_prompt_execute():
-    """Execute prompt with model on a random sample record"""
+    """Execute prompt with model on a specific or random sample record"""
     try:
         data = request.json
         batch_id = data.get('batch_id')
         prompt_template = data.get('prompt_template')
         response_schema = data.get('response_schema', '')
+        record_id = data.get('record_id', '')  # Optional specific record ID
 
         if not batch_id or not prompt_template:
             return jsonify({'success': False, 'error': 'Missing required fields'}), 400
@@ -832,12 +846,19 @@ def preview_prompt_execute():
         c = conn.cursor()
         c.execute('SELECT * FROM batches WHERE id = ?', (batch_id,))
         batch = c.fetchone()
+
+        # Get dataset configuration to find record ID field
+        c.execute('SELECT * FROM dataset_configs WHERE crm_dataset_id = ?', (batch['dataset_id'],))
+        dataset_config = c.fetchone()
         conn.close()
 
         if not batch:
             return jsonify({'success': False, 'error': 'Batch not found'}), 404
 
-        # Get sample record from dataset (random)
+        if not dataset_config:
+            return jsonify({'success': False, 'error': 'Dataset configuration not found'}), 404
+
+        # Get sample record from dataset
         client = get_sf_client()
         fields_data = client.get_dataset_fields(batch['dataset_id'])
 
@@ -859,15 +880,27 @@ def preview_prompt_execute():
         else:
             field_names = all_field_names[:50]
 
+        # Make sure record ID field is included
+        record_id_field = dataset_config['record_id_field']
+        if record_id_field not in field_names:
+            field_names.append(record_id_field)
+
         print(f"Querying fields: {field_names}")
 
-        # Query a random sample record
-        import random
-        offset = random.randint(0, 10)  # Random offset for variety
-        sample_records = client.query_dataset(batch['dataset_id'], field_names, limit=1)
-
-        if not sample_records:
-            return jsonify({'success': False, 'error': 'No records found in dataset'}), 404
+        # Query specific record or random sample
+        if record_id:
+            # Query specific record by ID
+            filters = {record_id_field: record_id}
+            sample_records = client.query_dataset(batch['dataset_id'], field_names, limit=1, filters=filters)
+            if not sample_records:
+                return jsonify({'success': False, 'error': f'Record with {record_id_field}="{record_id}" not found'}), 404
+        else:
+            # Query a random sample record
+            import random
+            offset = random.randint(0, 10)  # Random offset for variety
+            sample_records = client.query_dataset(batch['dataset_id'], field_names, limit=1)
+            if not sample_records:
+                return jsonify({'success': False, 'error': 'No records found in dataset'}), 404
 
         sample_record = sample_records[0]
 

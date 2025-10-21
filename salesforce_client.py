@@ -269,7 +269,7 @@ class SalesforceClient:
                 # Add filters if provided
                 filter_conditions = []
                 for field, value in filters.items():
-                    filter_conditions.append(f'"{field}" == "{value}"')
+                    filter_conditions.append(f"'{field}' == \"{value}\"")
                 if filter_conditions:
                     saql += f'\nq = filter q by {" && ".join(filter_conditions)};'
 

@@ -111,9 +111,14 @@ function setupEventListeners() {
         savePromptConfiguration();
     });
 
-    // Prompt Builder - Preview prompt
+    // Prompt Builder - Preview prompt (open modal)
     document.getElementById('preview-prompt-btn').addEventListener('click', function() {
         previewPrompt();
+    });
+
+    // Preview modal - Execute preview button
+    document.getElementById('preview-execute-btn').addEventListener('click', function() {
+        executePreview();
     });
 
     // Prompt Builder - Validate schema
@@ -1044,7 +1049,7 @@ async function loadPromptConfig(batchId) {
     }
 }
 
-async function previewPrompt() {
+function previewPrompt() {
     if (!currentBatch) {
         showAlert('warning', 'Please select a batch first');
         return;
@@ -1056,28 +1061,45 @@ async function previewPrompt() {
         return;
     }
 
-    // Get response schema (optional)
-    const responseSchema = document.getElementById('response-schema').value;
-
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('previewPromptModal'));
     modal.show();
 
     // Reset modal state
+    document.getElementById('preview-record-selection').style.display = 'block';
+    document.getElementById('preview-loading').style.display = 'none';
+    document.getElementById('preview-content').style.display = 'none';
+    document.getElementById('preview-error').style.display = 'none';
+    document.getElementById('preview-record-id-input').value = '';
+}
+
+async function executePreview() {
+    const promptTemplate = document.getElementById('prompt-template').value;
+    const responseSchema = document.getElementById('response-schema').value;
+    const recordId = document.getElementById('preview-record-id-input').value.trim();
+
+    // Hide selection, show loading
+    document.getElementById('preview-record-selection').style.display = 'none';
     document.getElementById('preview-loading').style.display = 'block';
     document.getElementById('preview-content').style.display = 'none';
     document.getElementById('preview-error').style.display = 'none';
 
     try {
-        // Model config is now global, backend will use settings.json
+        const requestBody = {
+            batch_id: currentBatch.id,
+            prompt_template: promptTemplate,
+            response_schema: responseSchema
+        };
+
+        // Add record_id only if specified
+        if (recordId) {
+            requestBody.record_id = recordId;
+        }
+
         const response = await fetch('/api/analysis/preview-prompt-execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                batch_id: currentBatch.id,
-                prompt_template: promptTemplate,
-                response_schema: responseSchema
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();
@@ -1095,7 +1117,7 @@ async function previewPrompt() {
             document.getElementById('preview-model-response').textContent =
                 data.model_response;
         } else {
-            // Show error
+            // Show error with option to go back
             document.getElementById('preview-loading').style.display = 'none';
             document.getElementById('preview-error').style.display = 'block';
             document.getElementById('preview-error-message').textContent = data.error;

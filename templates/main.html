@@ -778,8 +778,27 @@ I need a response that includes:
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- Record ID Selection -->
+                    <div id="preview-record-selection" class="mb-4">
+                        <div class="row align-items-end">
+                            <div class="col-md-9">
+                                <label for="preview-record-id-input" class="form-label">Record ID (optional)</label>
+                                <input type="text" id="preview-record-id-input" class="form-control" placeholder="Leave blank for random sample">
+                                <small class="text-muted">Enter a specific Record ID to preview, or leave blank to use a random sample</small>
+                            </div>
+                            <div class="col-md-3">
+                                <button id="preview-execute-btn" class="btn btn-success w-100">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-play-fill me-1" viewBox="0 0 16 16">
+                                        <path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393"/>
+                                    </svg>
+                                    Execute Preview
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Loading State -->
-                    <div id="preview-loading" class="text-center py-5">
+                    <div id="preview-loading" class="text-center py-5" style="display: none;">
                         <div class="spinner-border text-success mb-3" role="status" style="width: 3rem; height: 3rem;">
                             <span class="visually-hidden">Loading...</span>
                         </div>

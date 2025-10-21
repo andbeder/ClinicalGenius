@@ -81,7 +81,7 @@ class LMStudioClient:
         }
 
         try:
-            response = requests.post(url, json=payload, timeout=60)
+            response = requests.post(url, json=payload, timeout=600)
             response.raise_for_status()
             data = response.json()
 
@@ -192,7 +192,7 @@ class LMStudioClient:
         }
 
         try:
-            response = requests.post(url, json=payload, timeout=60)
+            response = requests.post(url, json=payload, timeout=600)
             response.raise_for_status()
             data = response.json()
 
