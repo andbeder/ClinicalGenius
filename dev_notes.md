@@ -1,6 +1,37 @@
 # Development Notes - Clinical Genius
 
-## Latest Update: Server-Side Execution Status Persistence (October 21, 2025)
+## Latest Update: Fixed Proving Ground SAQL Query with Multiple Record IDs (October 21, 2025)
+
+### Issue
+When copying/pasting multiple record IDs from Excel (newline-delimited), the SAQL query would:
+1. Include empty strings from trailing newlines, creating invalid `'field' == ""` filters
+2. Query each record individually in a loop (inefficient for 10+ records)
+
+### Fix
+1. **Filter empty values** (app.py:1239-1246)
+   - Strip whitespace and filter out empty record IDs before querying
+   - Prevents invalid SAQL syntax from blank values
+
+2. **Use SAQL `in` operator** (salesforce_client.py:272-276)
+   - Changed from: `'Name' == "REC-001" && 'Name' == "REC-002"` (invalid)
+   - Changed to: `'Name' in ["REC-001", "REC-002", "REC-003"]` (correct)
+   - Detects list values in filters dictionary and generates proper SAQL array syntax
+
+3. **Single query instead of loop** (app.py:1250-1254)
+   - Queries all record IDs in one SAQL call instead of N individual queries
+   - Much faster for 10+ records (1 query vs 10+ queries)
+
+**Example SAQL Generated**:
+```saql
+q = load "dataset_id/version_id";
+q = filter q by 'Name' in ["REC-001", "REC-002", "REC-003"];
+q = foreach q generate Name, Condition, Severity;
+q = limit q 3;
+```
+
+---
+
+## Previous Update: Server-Side Execution Status Persistence (October 21, 2025)
 
 ### View Execution Feature
 

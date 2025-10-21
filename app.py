@@ -1236,27 +1236,36 @@ def execute_proving_ground():
         print(f"Record ID field: {record_id_field}")
         print(f"Query fields: {query_fields}")
 
-        # Query each record individually using SAQL filters (efficient for specific record IDs)
-        matched_records = []
-        not_found = []
+        # Filter out empty record IDs (from trailing newlines, etc.)
+        record_ids = [rid.strip() for rid in record_ids if rid and rid.strip()]
 
-        for record_id_value in record_ids:
-            try:
-                # Query specific record by ID using filter
-                filters = {record_id_field: record_id_value}
-                records = client.query_dataset(batch['dataset_id'], query_fields, limit=1, filters=filters)
+        if not record_ids:
+            return jsonify({
+                'success': False,
+                'error': 'No valid record IDs provided after filtering empty values'
+            }), 400
 
-                if records:
-                    matched_records.append(records[0])
-                    print(f"Found record: {record_id_value}")
-                else:
-                    not_found.append(record_id_value)
-                    print(f"Not found: {record_id_value}")
-            except Exception as e:
-                print(f"Error querying record {record_id_value}: {str(e)}")
-                not_found.append(record_id_value)
+        print(f"Querying {len(record_ids)} record IDs: {record_ids[:10]}...")  # Show first 10
+
+        # Query all records at once using 'in' filter (much more efficient than individual queries)
+        try:
+            filters = {record_id_field: record_ids}  # Pass list for 'in' operator
+            matched_records = client.query_dataset(batch['dataset_id'], query_fields, limit=len(record_ids), filters=filters)
+            print(f"Found {len(matched_records)} matching records")
+        except Exception as e:
+            print(f"Error querying records: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': f'Error querying records: {str(e)}'
+            }), 500
+
+        # Determine which IDs were not found
+        found_ids = {record.get(record_id_field) for record in matched_records}
+        not_found = [rid for rid in record_ids if rid not in found_ids]
 
         print(f"Matched {len(matched_records)} records, {len(not_found)} not found")
+        if not_found:
+            print(f"Not found IDs: {not_found[:10]}")  # Show first 10
 
         if not matched_records:
             return jsonify({

@@ -269,7 +269,14 @@ class SalesforceClient:
                 # Add filters if provided
                 filter_conditions = []
                 for field, value in filters.items():
-                    filter_conditions.append(f"'{field}' == \"{value}\"")
+                    if isinstance(value, list):
+                        # Use 'in' operator for list of values
+                        # SAQL syntax: 'field' in ["val1", "val2", "val3"]
+                        values_str = ', '.join([f'"{v}"' for v in value])
+                        filter_conditions.append(f"'{field}' in [{values_str}]")
+                    else:
+                        # Single value - use equality
+                        filter_conditions.append(f"'{field}' == \"{value}\"")
                 if filter_conditions:
                     saql += f'\nq = filter q by {" && ".join(filter_conditions)};'
 
