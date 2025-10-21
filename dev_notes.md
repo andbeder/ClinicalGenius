@@ -68,14 +68,14 @@ def get_batch_fields(batch_id):
 
 **Supported Input Formats**:
 ```
-Comma-separated:     Claim-001, Claim-002, Claim-003
-Space-separated:     Claim-001 Claim-002 Claim-003
-Tab-separated:       Claim-001	Claim-002	Claim-003
-Newline-separated:   Claim-001
-                     Claim-002
-                     Claim-003
-Mixed:               Claim-001, Claim-002
-                     Claim-003	Claim-004 Claim-005
+Comma-separated:     Record-001, Record-002, Record-003
+Space-separated:     Record-001 Record-002 Record-003
+Tab-separated:       Record-001	Record-002	Record-003
+Newline-separated:   Record-001
+                     Record-002
+                     Record-003
+Mixed:               Record-001, Record-002
+                     Record-003	Record-004 Record-005
 ```
 
 **Excel Copy/Paste**:
@@ -88,23 +88,59 @@ Mixed:               Claim-001, Claim-002
 - Flexible input format
 - No need to manually reformat data before pasting
 
-### 3. Optimized: Query Only Fields Used in Prompt Template
+### 3. Optimized: Proving Ground for Large Datasets
 
-**Problem**: Proving Ground and Batch Execution were querying ALL fields from the dataset, even if the prompt only used a few fields.
+**Problem**: Proving Ground was loading up to 1000 records into memory and filtering client-side, which doesn't scale for large datasets (10,000+ records).
+
+**Solution**: Use SAQL filters to query specific records directly by their ID field, avoiding in-memory filtering.
+
+**Changes Made**:
+
+1. **Backend** (`app.py:1173-1234`):
+   - Get dataset configuration to find the record ID field
+   - Query each record individually using SAQL filters: `filter q by 'RecordID' == "value"`
+   - Only loads the exact records requested (not all 1000+)
+   - Returns `record_id` instead of generic `claim_name`
+
+2. **Frontend** (`main.js`):
+   - Updated table display to show `Record ID` column
+   - Updated CSV export to use `record_id`
+
+**Before**:
+```python
+# Load 1000 records into memory
+all_records = query_dataset(dataset_id, all_fields, limit=1000)
+# Filter in Python
+matched = [r for r in all_records if r['Name'] in record_ids]
+```
+
+**After**:
+```python
+# Query each record directly
+for record_id in record_ids:
+    records = query_dataset(dataset_id, fields, limit=1,
+                           filters={record_id_field: record_id})
+```
+
+**Benefits**:
+- Works with datasets of any size (10,000+ records)
+- No memory overhead for large datasets
+- Faster execution (only queries needed records)
+- Uses dataset configuration's record ID field
+
+### 4. Optimized: Query Only Fields Used in Prompt Template
+
+**Problem**: Batch Execution was querying ALL fields from the dataset, even if the prompt only used a few fields.
 
 **Solution**: Extract field names from prompt template using `{{field_name}}` syntax and only query those fields.
 
 **Changes Made**:
 
-1. **Proving Ground Execution** (`app.py:1176-1187`):
+1. **Batch Execution** (`app.py:1432-1453`):
    - Extract template fields using `PromptEngine.extract_variables()`
-   - Add common identifier fields (Name, Id) to ensure record filtering works
-   - Query only the extracted fields instead of all fields
-
-2. **Batch Execution** (`app.py:1422-1433`):
-   - Same optimization as Proving Ground
-   - Reduces query payload size
-   - Faster execution for large datasets
+   - Validate fields exist in dataset before querying
+   - Only query fields that are actually used in the template
+   - Include record ID field from dataset configuration
 
 **Example**:
 ```python

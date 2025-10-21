@@ -1266,20 +1266,20 @@ async function runProvingGroundPrompt() {
     }
 
     // Get record IDs (supports comma, tab, space, newline delimiters)
-    const claimNamesText = document.getElementById('proving-claim-names').value.trim();
-    if (!claimNamesText) {
+    const recordIdsText = document.getElementById('proving-claim-names').value.trim();
+    if (!recordIdsText) {
         showAlert('warning', 'Please enter at least one record ID');
         return;
     }
 
     // Parse with multiple delimiters: comma, tab, newline, or space
     // Split by any combination of these delimiters
-    const claimNames = claimNamesText
+    const recordIds = recordIdsText
         .split(/[\s,\t\n]+/)  // Split on whitespace, comma, tab, or newline
         .map(name => name.trim())
         .filter(name => name.length > 0);
 
-    if (claimNames.length === 0) {
+    if (recordIds.length === 0) {
         showAlert('warning', 'No valid record IDs found');
         return;
     }
@@ -1300,7 +1300,7 @@ async function runProvingGroundPrompt() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 batch_id: provingBatch.id,
-                claim_names: claimNames
+                claim_names: recordIds
             })
         });
 
@@ -1346,7 +1346,7 @@ function displayProvingResults(results) {
         }
     });
 
-    const columns = ['claim_name', ...Array.from(allKeys)];
+    const columns = ['record_id', ...Array.from(allKeys)];
 
     // Build table header
     const thead = document.getElementById('proving-results-thead');
@@ -1354,7 +1354,7 @@ function displayProvingResults(results) {
     const headerRow = document.createElement('tr');
     columns.forEach(col => {
         const th = document.createElement('th');
-        th.textContent = col;
+        th.textContent = col === 'record_id' ? 'Record ID' : col;
         headerRow.appendChild(th);
     });
     thead.appendChild(headerRow);
@@ -1368,8 +1368,8 @@ function displayProvingResults(results) {
 
         columns.forEach(col => {
             const td = document.createElement('td');
-            if (col === 'claim_name') {
-                td.textContent = result.claim_name || 'Unknown';
+            if (col === 'record_id') {
+                td.textContent = result.record_id || 'Unknown';
             } else {
                 const value = result.response?.[col];
                 if (value !== undefined && value !== null) {
@@ -1403,7 +1403,7 @@ function exportProvingCSV() {
         }
     });
 
-    const columns = ['claim_name', ...Array.from(allKeys)];
+    const columns = ['record_id', ...Array.from(allKeys)];
 
     // Build CSV content (structured format - one record per row)
     let csv = columns.join(',') + '\n';
@@ -1411,8 +1411,8 @@ function exportProvingCSV() {
     provingResults.forEach(result => {
         const row = columns.map(col => {
             let value;
-            if (col === 'claim_name') {
-                value = result.claim_name || '';
+            if (col === 'record_id') {
+                value = result.record_id || '';
             } else {
                 value = result.response?.[col];
             }

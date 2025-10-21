@@ -201,10 +201,10 @@
                         <div class="card-body">
                             <p class="text-muted small mb-3">Write your prompt template using <code>{{field_name}}</code> syntax to reference dataset fields.</p>
                             <textarea id="prompt-template" class="form-control font-monospace" rows="12" placeholder="Example:
-Analyze the following medical claim data:
+Analyze the following record data:
 
 Patient Name: {{patient_name}}
-Claim Amount: {{claim_amount}}
+Amount: {{amount}}
 Diagnosis: {{diagnosis}}
 
 Provide a comprehensive analysis including risk factors and recommendations."></textarea>
@@ -319,7 +319,7 @@ I need a response that includes:
                         </div>
                         <div class="card-body">
                             <label for="proving-claim-names" class="form-label">Enter record IDs (comma, tab, space, or newline separated):</label>
-                            <textarea id="proving-claim-names" class="form-control font-monospace" rows="5" placeholder="Claim-001, Claim-002, Claim-003&#10;or paste from Excel:&#10;Claim-001&#10;Claim-002&#10;Claim-003"></textarea>
+                            <textarea id="proving-claim-names" class="form-control font-monospace" rows="5" placeholder="Record-001, Record-002, Record-003&#10;or paste from Excel:&#10;Record-001&#10;Record-002&#10;Record-003"></textarea>
                             <small class="text-muted">You can paste directly from Excel - supports comma, tab, space, or newline delimiters.</small>
                         </div>
                     </div>
@@ -368,7 +368,7 @@ I need a response that includes:
                                 <div class="spinner-border text-success mb-3" role="status" style="width: 3rem; height: 3rem;">
                                     <span class="visually-hidden">Loading...</span>
                                 </div>
-                                <p class="text-muted">Executing prompts on claims...</p>
+                                <p class="text-muted">Executing prompts on records...</p>
                                 <p id="proving-progress-text" class="text-muted small"></p>
                             </div>
 
@@ -391,7 +391,7 @@ I need a response that includes:
                             </div>
 
                             <div id="proving-no-results" class="text-muted text-center py-5">
-                                Configure your prompt in the Prompt Builder, enter claim names above, and click "Run Prompt" to execute.
+                                Configure your prompt in the Prompt Builder, enter record IDs above, and click "Run Prompt" to execute.
                             </div>
 
                             <div id="proving-error" class="alert alert-danger" style="display: none;">

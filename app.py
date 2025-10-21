@@ -1124,17 +1124,17 @@ Return ONLY the JSON schema, nothing else. Use descriptive field names and appro
 
 @app.route('/api/analysis/execute-proving-ground', methods=['POST'])
 def execute_proving_ground():
-    """Execute prompt on a list of claim names"""
+    """Execute prompt on a list of record IDs"""
     try:
         data = request.json
         batch_id = data.get('batch_id')
-        claim_names = data.get('claim_names', [])
+        record_ids = data.get('claim_names', [])  # Keep 'claim_names' for backward compatibility
 
         if not batch_id:
             return jsonify({'success': False, 'error': 'Missing batch_id'}), 400
 
-        if not claim_names:
-            return jsonify({'success': False, 'error': 'Missing claim_names'}), 400
+        if not record_ids:
+            return jsonify({'success': False, 'error': 'Missing record IDs'}), 400
 
         # Get batch info
         conn = sqlite3.connect('analysis_batches.db')
@@ -1173,6 +1173,19 @@ def execute_proving_ground():
         # Get Salesforce client
         client = get_sf_client()
 
+        # Get dataset configuration to find the record ID field
+        conn = sqlite3.connect('analysis_batches.db')
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('SELECT * FROM dataset_configs WHERE crm_dataset_id = ?', (batch['dataset_id'],))
+        dataset_config = c.fetchone()
+        conn.close()
+
+        if not dataset_config:
+            return jsonify({'success': False, 'error': 'Dataset configuration not found. Please configure the dataset first.'}), 404
+
+        record_id_field = dataset_config['record_id_field']
+
         # Extract fields used in the prompt template
         prompt_engine = PromptEngine()
         template_fields = prompt_engine.extract_variables(prompt_config['template'])
@@ -1184,41 +1197,40 @@ def execute_proving_ground():
         # Start with template fields that exist in dataset
         query_fields = [f for f in template_fields if f in available_field_names]
 
-        # Add common ID/Name fields if they exist
-        for field in ['Name', 'Title', 'Id', 'RecordId', 'ClaimNumber']:
-            if field in available_field_names and field not in query_fields:
-                query_fields.append(field)
+        # Ensure record ID field is included
+        if record_id_field not in query_fields:
+            query_fields.append(record_id_field)
 
         print(f"Template fields: {template_fields}")
-        print(f"Available fields: {available_field_names[:20]}")
+        print(f"Record ID field: {record_id_field}")
         print(f"Query fields: {query_fields}")
 
-        # Query records with only the fields we need
-        all_records = client.query_dataset(batch['dataset_id'], query_fields, limit=1000)
-
-        print(f"Searching for claim names: {claim_names}")
-        print(f"Retrieved {len(all_records)} records from dataset")
-
-        # Filter records by claim names
+        # Query each record individually using SAQL filters (efficient for specific record IDs)
         matched_records = []
-        all_record_names = []
-        for record in all_records:
-            # Try various name fields
-            record_name = (record.get('Name') or record.get('name') or
-                          record.get('Title') or record.get('title') or '')
+        not_found = []
 
-            all_record_names.append(record_name)
+        for record_id_value in record_ids:
+            try:
+                # Query specific record by ID using filter
+                filters = {record_id_field: record_id_value}
+                records = client.query_dataset(batch['dataset_id'], query_fields, limit=1, filters=filters)
 
-            if record_name in claim_names:
-                matched_records.append(record)
+                if records:
+                    matched_records.append(records[0])
+                    print(f"Found record: {record_id_value}")
+                else:
+                    not_found.append(record_id_value)
+                    print(f"Not found: {record_id_value}")
+            except Exception as e:
+                print(f"Error querying record {record_id_value}: {str(e)}")
+                not_found.append(record_id_value)
 
-        print(f"Sample record names from dataset: {all_record_names[:10]}")
-        print(f"Matched {len(matched_records)} records")
+        print(f"Matched {len(matched_records)} records, {len(not_found)} not found")
 
         if not matched_records:
             return jsonify({
                 'success': False,
-                'error': f'No records found matching the provided claim names. Found {len(all_records)} total records in dataset. Sample names: {", ".join(all_record_names[:5])}'
+                'error': f'No records found matching the provided IDs. Not found: {", ".join(not_found[:10])}'
             }), 404
 
         # Load global settings for LLM
@@ -1228,9 +1240,8 @@ def execute_proving_ground():
         results = []
         for record in matched_records:
             try:
-                # Get record name
-                record_name = (record.get('Name') or record.get('name') or
-                              record.get('Title') or record.get('title') or 'Unknown')
+                # Get record ID
+                record_id = record.get(record_id_field) or 'Unknown'
 
                 # Render prompt with record data
                 rendered_prompt = prompt_engine.build_prompt(prompt_config['template'], record)
@@ -1254,14 +1265,14 @@ def execute_proving_ground():
                     response_json = {'raw_response': model_response}
 
                 results.append({
-                    'claim_name': record_name,
+                    'record_id': record_id,
                     'response': response_json
                 })
 
             except Exception as record_error:
-                print(f"Error processing record {record_name}: {str(record_error)}")
+                print(f"Error processing record {record_id}: {str(record_error)}")
                 results.append({
-                    'claim_name': record_name,
+                    'record_id': record_id,
                     'response': {'error': str(record_error)}
                 })
 
