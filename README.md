@@ -297,7 +297,6 @@ clinical-genius/
 ├── salesforce_client.py        # Salesforce CRM Analytics client
 ├── lm_studio_client.py         # Multi-provider LLM client
 ├── prompt_engine.py            # Prompt template engine
-├── sfdcJwtAuth.js              # Node.js JWT authentication
 ├── templates/
 │   ├── main.html               # Main application UI
 │   └── index.html              # Synthetic data generator UI
@@ -312,6 +311,9 @@ clinical-genius/
 ├── dev_notes.md                # Development notes
 ├── README.md                   # This file
 └── .env                        # Environment configuration
+
+../                             # Parent directory (shared across projects)
+└── sfdcJwtAuth.js              # Node.js JWT authentication (shared)
 ```
 
 ## Troubleshooting

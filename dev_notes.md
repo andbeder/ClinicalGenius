@@ -275,8 +275,8 @@ python app.py
 # Deploy fields to Salesforce
 sf project deploy start --source-dir force-app/main/default/objects/Claim__c/fields
 
-# Test Salesforce connection
-SFDC_USERNAME="andbeder@gmail.com" KEY_PASS="JaCieDam100" SFDC_CLIENT_ID="3MVG9XgkMlifdwVAA3YLU.YAgszhXc3HIDrpHaKyzpUhgusGKYXhm92lAgKYPvfviYQmosjdr.FqBtXfe.UB_" node sfdcJwtAuth.js
+# Test Salesforce connection (sfdcJwtAuth.js is in parent directory)
+SFDC_USERNAME="andbeder@gmail.com" KEY_PASS="JaCieDam100" SFDC_CLIENT_ID="3MVG9XgkMlifdwVAA3YLU.YAgszhXc3HIDrpHaKyzpUhgusGKYXhm92lAgKYPvfviYQmosjdr.FqBtXfe.UB_" node ../sfdcJwtAuth.js
 ```
 
 ### Known Issues & Future Enhancements

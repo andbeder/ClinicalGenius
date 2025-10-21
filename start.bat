@@ -65,10 +65,12 @@ if errorlevel 1 (
     pause
 )
 
-REM Check if jsforce is installed
-if not exist "node_modules\jsforce\" (
-    echo Installing Node.js dependencies...
+REM Check if jsforce is installed in parent directory
+if not exist "..\node_modules\jsforce\" (
+    echo Installing Node.js dependencies in parent directory...
+    pushd ..
     call npm install jsforce
+    popd
     if errorlevel 1 (
         echo WARNING: Failed to install jsforce
         echo Salesforce authentication may not work

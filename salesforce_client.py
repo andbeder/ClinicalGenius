@@ -25,9 +25,9 @@ class SalesforceClient:
             env['SFDC_CLIENT_ID'] = os.getenv('SFDC_CLIENT_ID')
             env['SFDC_LOGIN_URL'] = os.getenv('SFDC_LOGIN_URL', 'https://login.salesforce.com')
 
-            # Run the Node.js authentication script
+            # Run the Node.js authentication script from parent directory
             result = subprocess.run(
-                ['node', 'sfdcJwtAuth.js'],
+                ['node', '../sfdcJwtAuth.js'],
                 env=env,
                 capture_output=True,
                 text=True,
@@ -37,23 +37,22 @@ class SalesforceClient:
             if result.returncode != 0:
                 raise Exception(f"Authentication failed: {result.stderr}")
 
-            # Get the access token and instance URL from environment
-            # The script sets SF_ACCESS_TOKEN and SF_INSTANCE_URL
-            self.access_token = env.get('SF_ACCESS_TOKEN')
-            self.instance_url = env.get('SF_INSTANCE_URL')
+            # Get the access token and instance URL from sf CLI
+            # The Node.js script stores credentials in sf CLI org cache
+            org_info = subprocess.run(
+                ['sf', 'org', 'display', '--target-org', 'myJwtOrg', '--json'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
 
-            # If not in env, try to get from sf CLI
-            if not self.access_token:
-                org_info = subprocess.run(
-                    ['sf', 'org', 'display', '--target-org', 'myJwtOrg', '--json'],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if org_info.returncode == 0:
-                    org_data = json.loads(org_info.stdout)
-                    self.access_token = org_data['result']['accessToken']
-                    self.instance_url = org_data['result']['instanceUrl']
+            if org_info.returncode == 0:
+                org_data = json.loads(org_info.stdout)
+                self.access_token = org_data['result']['accessToken']
+                self.instance_url = org_data['result']['instanceUrl']
+                print(f"Retrieved credentials from sf CLI: {self.instance_url}")
+            else:
+                raise Exception(f"Failed to retrieve credentials from sf CLI: {org_info.stderr}")
 
             if not self.access_token or not self.instance_url:
                 raise Exception("Could not retrieve access token or instance URL")

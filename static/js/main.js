@@ -1311,14 +1311,12 @@ async function loadSettings() {
 function updateSettingsProviderUI() {
     const provider = document.getElementById('settings-provider').value;
     const endpointGroup = document.getElementById('settings-endpoint-group');
-    const apiKeyGroup = document.getElementById('settings-api-key-group');
 
+    // Show endpoint field only for LM Studio
     if (provider === 'lm_studio') {
         endpointGroup.style.display = 'block';
-        apiKeyGroup.style.display = 'none';
     } else {
         endpointGroup.style.display = 'none';
-        apiKeyGroup.style.display = 'block';
     }
 }
 
@@ -1331,12 +1329,6 @@ async function saveSettings() {
         max_tokens: parseInt(document.getElementById('settings-max-tokens').value),
         timeout: parseInt(document.getElementById('settings-timeout').value)
     };
-
-    // Only include API key if it's filled in
-    const apiKey = document.getElementById('settings-api-key').value;
-    if (apiKey && apiKey.trim() !== '') {
-        settings.api_key = apiKey;
-    }
 
     try {
         const response = await fetch('/api/settings', {

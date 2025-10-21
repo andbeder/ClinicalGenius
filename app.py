@@ -1190,6 +1190,10 @@ def generate_structured_csv(results):
     # Write header
     writer.writerow(['Record ID', 'Batch Name', 'Parameter Name', 'Value'])
 
+    # JSON Schema metadata fields to exclude
+    schema_fields = {'$schema', 'type', 'properties', 'required', 'title', 'description',
+                     'definitions', 'additionalProperties', '$id', '$ref', 'items'}
+
     # Write data
     for result in results:
         record_id = result['record_id']
@@ -1198,6 +1202,10 @@ def generate_structured_csv(results):
 
         if isinstance(response, dict):
             for param_name, value in response.items():
+                # Skip JSON schema metadata fields
+                if param_name in schema_fields:
+                    continue
+
                 # Convert value to string
                 if isinstance(value, (dict, list)):
                     value_str = json.dumps(value)

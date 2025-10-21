@@ -571,15 +571,10 @@ I need a response that includes:
                             </div>
 
                             <div class="row mb-3">
-                                <div class="col-md-6">
+                                <div class="col-md-12">
                                     <label for="settings-model" class="form-label">Model:</label>
                                     <input type="text" id="settings-model" class="form-control" value="gpt-4o-mini" placeholder="gpt-4o-mini">
-                                    <small class="text-muted">Model name (for OpenAI/Copilot)</small>
-                                </div>
-                                <div class="col-md-6" id="settings-api-key-group" style="display: none;">
-                                    <label for="settings-api-key" class="form-label">API Key:</label>
-                                    <input type="password" id="settings-api-key" class="form-control" placeholder="sk-...">
-                                    <small class="text-muted">Your OpenAI/Copilot API key</small>
+                                    <small class="text-muted">Model name (for OpenAI/Copilot). Note: API keys are configured in .env file for security.</small>
                                 </div>
                             </div>
 
@@ -628,7 +623,13 @@ I need a response that includes:
                         <div class="card-body">
                             <p><strong>Version:</strong> 2.0</p>
                             <p><strong>Environment:</strong> <span id="env-info">Loading...</span></p>
-                            <p class="mb-0"><strong>API Keys:</strong> Stored in .env file (not editable from UI for security)</p>
+                            <p class="mb-0"><strong>API Keys:</strong> Configure in .env file for security</p>
+                            <small class="text-muted">
+                                <ul class="mt-2 mb-0">
+                                    <li>OPENAI_API_KEY - For OpenAI provider</li>
+                                    <li>COPILOT_API_KEY - For Microsoft Copilot provider</li>
+                                </ul>
+                            </small>
                         </div>
                     </div>
                 </div>
