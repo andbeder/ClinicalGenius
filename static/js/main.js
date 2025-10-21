@@ -6,6 +6,12 @@ let datasets = [];
 let batches = [];
 let currentBatch = null;
 let datasetFields = [];
+let modalDatasetFields = []; // Fields for the modal
+let modalSelectedFields = []; // Fields selected in the modal
+let selectedFields = []; // Fields selected in the Datasets tab
+let datasetConfigs = []; // All dataset configurations
+let datasetConfig = null; // Configured dataset from Datasets tab
+let currentEditingConfigId = null; // ID of config being edited
 let promptConfig = {
     template: '',
     responseSchema: {},
@@ -33,6 +39,9 @@ function initializeApp() {
     // Load datasets
     loadDatasets();
 
+    // Load dataset configurations
+    loadDatasetConfigurations();
+
     // Load recent batches
     loadBatches();
 }
@@ -46,15 +55,41 @@ function setupEventListeners() {
         });
     });
 
-    // Dataset selection
-    document.getElementById('dataset-select').addEventListener('change', function() {
-        handleDatasetSelection(this.value);
+    // Datasets Tab - Create new dataset
+    document.getElementById('create-dataset-btn').addEventListener('click', function() {
+        showDatasetConfigModal();
     });
 
-    // Refresh datasets button
-    document.getElementById('refresh-datasets-btn').addEventListener('click', function() {
-        loadDatasets();
+    // Dataset Modal - CRM Dataset selection
+    document.getElementById('modal-crm-dataset-select').addEventListener('change', function() {
+        handleModalDatasetSelection(this.value);
     });
+
+    // Dataset Modal - Field search
+    document.getElementById('modal-field-search').addEventListener('input', function() {
+        filterModalFieldList(this.value);
+    });
+
+    // Dataset Modal - Select all fields
+    document.getElementById('modal-select-all-fields-btn').addEventListener('click', function() {
+        toggleModalAllFields(true);
+    });
+
+    // Dataset Modal - Deselect all fields
+    document.getElementById('modal-deselect-all-fields-btn').addEventListener('click', function() {
+        toggleModalAllFields(false);
+    });
+
+    // Dataset Modal - Test filter
+    document.getElementById('modal-test-filter-btn').addEventListener('click', function() {
+        testModalSaqlFilter();
+    });
+
+    // Dataset Modal - Save button
+    document.getElementById('save-dataset-modal-btn').addEventListener('click', function() {
+        saveDatasetConfigModal();
+    });
+
 
     // Create new analysis button
     document.getElementById('create-batch-btn').addEventListener('click', function() {
@@ -225,7 +260,6 @@ async function loadDatasets() {
 
         if (data.success) {
             datasets = data.datasets;
-            populateDatasetDropdowns();
         } else {
             console.error('Failed to load datasets:', data.error);
             showAlert('danger', 'Failed to load datasets: ' + data.error);
@@ -236,54 +270,396 @@ async function loadDatasets() {
     }
 }
 
-function populateDatasetDropdowns() {
-    const selects = ['dataset-select', 'analysis-dataset'];
 
-    selects.forEach(selectId => {
-        const select = document.getElementById(selectId);
-        const currentValue = select.value;
+// ========================================
+// Dataset Configuration Functions
+// ========================================
 
-        // Clear existing options (except first one)
-        select.innerHTML = '<option value="">-- Choose a dataset --</option>';
+async function loadDatasetConfigurations() {
+    document.getElementById('datasets-loading').style.display = 'block';
+    document.getElementById('datasets-list-container').style.display = 'none';
+    document.getElementById('no-datasets').style.display = 'none';
 
-        // Add dataset options
-        datasets.forEach(dataset => {
-            const option = document.createElement('option');
-            option.value = dataset.id;
-            option.textContent = dataset.name;
-            select.appendChild(option);
+    try {
+        const response = await fetch('/api/dataset-configs');
+        const data = await response.json();
+
+        if (data.success) {
+            datasetConfigs = data.configs;
+            displayDatasetConfigs();
+        } else {
+            console.error('Failed to load dataset configs:', data.error);
+            document.getElementById('datasets-loading').style.display = 'none';
+            showAlert('danger', 'Failed to load dataset configurations: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error loading dataset configs:', error);
+        document.getElementById('datasets-loading').style.display = 'none';
+        showAlert('danger', 'Error loading dataset configurations: ' + error.message);
+    }
+}
+
+function displayDatasetConfigs() {
+    const tbody = document.getElementById('datasets-list-tbody');
+    tbody.innerHTML = '';
+
+    document.getElementById('datasets-loading').style.display = 'none';
+
+    if (datasetConfigs.length === 0) {
+        document.getElementById('no-datasets').style.display = 'block';
+        return;
+    }
+
+    document.getElementById('datasets-list-container').style.display = 'block';
+
+    datasetConfigs.forEach(config => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${config.name}</td>
+            <td>${config.crm_dataset_name || config.crm_dataset_id}</td>
+            <td>${config.record_id_field}</td>
+            <td>${config.selected_fields.length} field(s)</td>
+            <td>${config.saql_filter ? '<span class="badge bg-info">Applied</span>' : '<span class="badge bg-secondary">None</span>'}</td>
+            <td>
+                <button class="btn btn-sm btn-primary me-1" onclick="editDatasetConfig('${config.id}')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
+                    </svg>
+                    Edit
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteDatasetConfig('${config.id}')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                        <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                    </svg>
+                    Delete
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function showDatasetConfigModal(configId = null) {
+    currentEditingConfigId = configId;
+    modalSelectedFields = [];
+    modalDatasetFields = [];
+
+    const modal = new bootstrap.Modal(document.getElementById('datasetConfigModal'));
+    const title = document.getElementById('dataset-modal-title');
+
+    if (configId) {
+        title.textContent = 'Edit Dataset Configuration';
+        loadConfigIntoModal(configId);
+    } else {
+        title.textContent = 'New Dataset Configuration';
+        clearModalForm();
+    }
+
+    // Populate CRM dataset dropdown
+    populateModalDatasetDropdown();
+
+    modal.show();
+}
+
+function populateModalDatasetDropdown() {
+    const select = document.getElementById('modal-crm-dataset-select');
+    select.innerHTML = '<option value="">-- Choose a dataset --</option>';
+
+    const sortedDatasets = [...datasets].sort((a, b) => {
+        const aLabel = a.label || a.name || a.id;
+        const bLabel = b.label || b.name || b.id;
+        return aLabel.localeCompare(bLabel);
+    });
+
+    sortedDatasets.forEach(ds => {
+        const option = document.createElement('option');
+        option.value = ds.id;
+        option.textContent = ds.label || ds.name || ds.id;
+        select.appendChild(option);
+    });
+}
+
+function clearModalForm() {
+    document.getElementById('modal-dataset-id').value = '';
+    document.getElementById('modal-dataset-name').value = '';
+    document.getElementById('modal-crm-dataset-select').value = '';
+    document.getElementById('modal-record-id-field').innerHTML = '<option value="">-- Select dataset first --</option>';
+    document.getElementById('modal-saql-filter').value = '';
+    document.getElementById('modal-filter-test-result').style.display = 'none';
+    document.getElementById('modal-field-selection-list').innerHTML = '<p class="text-muted small">Select a dataset to see available fields</p>';
+    modalSelectedFields = [];
+    modalDatasetFields = [];
+}
+
+async function loadConfigIntoModal(configId) {
+    try {
+        const response = await fetch(`/api/dataset-configs/${configId}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const config = data.config;
+            document.getElementById('modal-dataset-id').value = config.id;
+            document.getElementById('modal-dataset-name').value = config.name;
+            document.getElementById('modal-crm-dataset-select').value = config.crm_dataset_id;
+            document.getElementById('modal-saql-filter').value = config.saql_filter || '';
+            modalSelectedFields = config.selected_fields;
+
+            // Load fields for the selected dataset
+            await handleModalDatasetSelection(config.crm_dataset_id);
+            document.getElementById('modal-record-id-field').value = config.record_id_field;
+        }
+    } catch (error) {
+        console.error('Error loading config:', error);
+        showAlert('danger', 'Error loading configuration: ' + error.message);
+    }
+}
+
+async function handleModalDatasetSelection(datasetId) {
+    if (!datasetId) {
+        document.getElementById('modal-record-id-field').innerHTML = '<option value="">-- Select dataset first --</option>';
+        document.getElementById('modal-field-selection-list').innerHTML = '<p class="text-muted small">Select a dataset to see available fields</p>';
+        modalDatasetFields = [];
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/crm-analytics/datasets/${datasetId}/fields`);
+        const data = await response.json();
+
+        if (data.success) {
+            modalDatasetFields = data.fields;
+            populateModalRecordIdFieldDropdown();
+            populateModalFieldSelectionList();
+        } else {
+            showAlert('danger', 'Failed to load dataset fields: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error loading dataset fields:', error);
+        showAlert('danger', 'Error loading dataset fields: ' + error.message);
+    }
+}
+
+function populateModalRecordIdFieldDropdown() {
+    const select = document.getElementById('modal-record-id-field');
+    select.innerHTML = '<option value="">-- Select a field --</option>';
+
+    const sortedFields = [...modalDatasetFields].sort((a, b) => a.name.localeCompare(b.name));
+
+    sortedFields.forEach(field => {
+        const option = document.createElement('option');
+        option.value = field.name;
+        option.textContent = `${field.label || field.name} (${field.name})`;
+        select.appendChild(option);
+    });
+}
+
+function populateModalFieldSelectionList() {
+    const container = document.getElementById('modal-field-selection-list');
+    container.innerHTML = '';
+
+    const sortedFields = [...modalDatasetFields].sort((a, b) => a.name.localeCompare(b.name));
+
+    sortedFields.forEach(field => {
+        const div = document.createElement('div');
+        div.className = 'form-check';
+        div.dataset.fieldName = field.name;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'form-check-input modal-field-checkbox';
+        checkbox.id = `modal-field-${field.name}`;
+        checkbox.value = field.name;
+        checkbox.checked = modalSelectedFields.includes(field.name);
+
+        checkbox.addEventListener('change', function() {
+            if (this.checked) {
+                if (!modalSelectedFields.includes(field.name)) {
+                    modalSelectedFields.push(field.name);
+                }
+            } else {
+                modalSelectedFields = modalSelectedFields.filter(f => f !== field.name);
+            }
         });
 
-        // Restore selection if it still exists
-        if (currentValue) {
-            select.value = currentValue;
+        const label = document.createElement('label');
+        label.className = 'form-check-label';
+        label.htmlFor = `modal-field-${field.name}`;
+        label.textContent = `${field.label || field.name} (${field.name}) - ${field.type}`;
+
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        container.appendChild(div);
+    });
+}
+
+function filterModalFieldList(searchTerm) {
+    const container = document.getElementById('modal-field-selection-list');
+    const fieldDivs = container.querySelectorAll('.form-check');
+
+    const lowerSearch = searchTerm.toLowerCase();
+
+    fieldDivs.forEach(div => {
+        const label = div.querySelector('label').textContent.toLowerCase();
+        div.style.display = label.includes(lowerSearch) ? 'block' : 'none';
+    });
+}
+
+function toggleModalAllFields(select) {
+    const checkboxes = document.querySelectorAll('.modal-field-checkbox');
+    checkboxes.forEach(checkbox => {
+        if (checkbox.closest('.form-check').style.display !== 'none') {
+            checkbox.checked = select;
+            const fieldName = checkbox.value;
+            if (select) {
+                if (!modalSelectedFields.includes(fieldName)) {
+                    modalSelectedFields.push(fieldName);
+                }
+            } else {
+                modalSelectedFields = modalSelectedFields.filter(f => f !== fieldName);
+            }
         }
     });
 }
 
-function handleDatasetSelection(datasetId) {
+async function testModalSaqlFilter() {
+    const datasetId = document.getElementById('modal-crm-dataset-select').value;
+    const saqlFilter = document.getElementById('modal-saql-filter').value.trim();
+    const resultDiv = document.getElementById('modal-filter-test-result');
+
     if (!datasetId) {
-        document.getElementById('dataset-info').style.display = 'none';
-        currentDataset = null;
+        resultDiv.className = 'alert alert-warning mt-2';
+        resultDiv.textContent = 'Please select a dataset first';
+        resultDiv.style.display = 'block';
         return;
     }
 
-    const dataset = datasets.find(ds => ds.id === datasetId);
-    if (dataset) {
-        currentDataset = dataset;
-        displayDatasetInfo(dataset);
+    if (!saqlFilter) {
+        resultDiv.className = 'alert alert-warning mt-2';
+        resultDiv.textContent = 'Please enter a filter statement to test';
+        resultDiv.style.display = 'block';
+        return;
+    }
+
+    resultDiv.className = 'alert alert-info mt-2';
+    resultDiv.textContent = 'Testing filter...';
+    resultDiv.style.display = 'block';
+
+    try {
+        const response = await fetch('/api/dataset-config/test-filter', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dataset_id: datasetId, saql_filter: saqlFilter })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            resultDiv.className = 'alert alert-success mt-2';
+            resultDiv.innerHTML = `<strong>✓ Filter is valid!</strong><br><small>Query executed successfully and returned ${data.record_count} record(s).</small>`;
+        } else {
+            resultDiv.className = 'alert alert-danger mt-2';
+            resultDiv.innerHTML = `<strong>✗ Filter syntax error:</strong><br><small>${data.error}</small>`;
+        }
+    } catch (error) {
+        console.error('Error testing filter:', error);
+        resultDiv.className = 'alert alert-danger mt-2';
+        resultDiv.innerHTML = `<strong>✗ Error testing filter:</strong><br><small>${error.message}</small>`;
     }
 }
 
-function displayDatasetInfo(dataset) {
-    document.getElementById('dataset-name').textContent = dataset.name;
-    document.getElementById('dataset-api-name').textContent = dataset.developerName || dataset.id;
-    document.getElementById('dataset-rows').textContent = dataset.rowCount ? dataset.rowCount.toLocaleString() : 'Unknown';
-    document.getElementById('dataset-modified').textContent = dataset.lastModifiedDate ?
-        new Date(dataset.lastModifiedDate).toLocaleString() : 'Unknown';
+async function saveDatasetConfigModal() {
+    const name = document.getElementById('modal-dataset-name').value.trim();
+    const crmDatasetId = document.getElementById('modal-crm-dataset-select').value;
+    const recordIdField = document.getElementById('modal-record-id-field').value;
+    const saqlFilter = document.getElementById('modal-saql-filter').value.trim();
 
-    document.getElementById('dataset-info').style.display = 'block';
+    if (!name) {
+        showAlert('danger', 'Please enter a dataset name');
+        return;
+    }
+
+    if (!crmDatasetId) {
+        showAlert('danger', 'Please select a CRM Analytics dataset');
+        return;
+    }
+
+    if (!recordIdField) {
+        showAlert('danger', 'Please select a Record ID field');
+        return;
+    }
+
+    if (modalSelectedFields.length === 0) {
+        showAlert('danger', 'Please select at least one field');
+        return;
+    }
+
+    const dataset = datasets.find(ds => ds.id === crmDatasetId);
+    const crmDatasetName = dataset ? dataset.label : crmDatasetId;
+
+    const config = {
+        name: name,
+        crm_dataset_id: crmDatasetId,
+        crm_dataset_name: crmDatasetName,
+        record_id_field: recordIdField,
+        saql_filter: saqlFilter,
+        selected_fields: modalSelectedFields
+    };
+
+    if (currentEditingConfigId) {
+        config.id = currentEditingConfigId;
+    }
+
+    try {
+        const response = await fetch('/api/dataset-configs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showAlert('success', 'Dataset configuration saved successfully!');
+            bootstrap.Modal.getInstance(document.getElementById('datasetConfigModal')).hide();
+            loadDatasetConfigurations();
+        } else {
+            showAlert('danger', 'Failed to save dataset configuration: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error saving dataset configuration:', error);
+        showAlert('danger', 'Error saving dataset configuration: ' + error.message);
+    }
 }
+
+function editDatasetConfig(configId) {
+    showDatasetConfigModal(configId);
+}
+
+async function deleteDatasetConfig(configId) {
+    if (!confirm('Are you sure you want to delete this dataset configuration?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/dataset-configs/${configId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showAlert('success', 'Dataset configuration deleted successfully');
+            loadDatasetConfigurations();
+        } else {
+            showAlert('danger', 'Failed to delete dataset configuration: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error deleting dataset configuration:', error);
+        showAlert('danger', 'Error deleting dataset configuration: ' + error.message);
+    }
+}
+
 
 async function loadBatches() {
     document.getElementById('batches-loading').style.display = 'block';
@@ -351,17 +727,41 @@ function getStatusBadgeClass(status) {
 }
 
 function showNewAnalysisModal() {
+    // Populate dataset dropdown with configured datasets
+    const select = document.getElementById('analysis-dataset');
+    select.innerHTML = '<option value="">-- Choose a configured dataset --</option>';
+
+    if (datasetConfigs.length === 0) {
+        select.innerHTML = '<option value="">-- No datasets configured --</option>';
+        showAlert('warning', 'Please configure a dataset in the Datasets tab first');
+        return;
+    }
+
+    datasetConfigs.forEach(config => {
+        const option = document.createElement('option');
+        option.value = config.id;
+        option.textContent = config.name;
+        select.appendChild(option);
+    });
+
     const modal = new bootstrap.Modal(document.getElementById('newAnalysisModal'));
     modal.show();
 }
 
 async function createNewAnalysis() {
     const name = document.getElementById('analysis-name').value;
-    const datasetId = document.getElementById('analysis-dataset').value;
+    const configId = document.getElementById('analysis-dataset').value;
     const description = document.getElementById('analysis-description').value;
 
-    if (!name || !datasetId) {
+    if (!name || !configId) {
         showAlert('warning', 'Please fill in all required fields');
+        return;
+    }
+
+    // Find the selected dataset configuration
+    const config = datasetConfigs.find(c => c.id === configId);
+    if (!config) {
+        showAlert('danger', 'Selected dataset configuration not found');
         return;
     }
 
@@ -371,7 +771,8 @@ async function createNewAnalysis() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 name: name,
-                dataset_id: datasetId,
+                dataset_id: config.crm_dataset_id,
+                dataset_name: config.crm_dataset_name,
                 description: description
             })
         });

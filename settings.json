@@ -1,0 +1,8 @@
+{
+  "provider": "lm_studio",
+  "endpoint": "http://localhost:1234",
+  "model": "gpt-4o-mini",
+  "temperature": 0.7,
+  "max_tokens": 4000,
+  "timeout": 60
+}

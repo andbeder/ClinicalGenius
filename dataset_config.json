@@ -1,0 +1,14 @@
+{
+  "name": "Claim Detail",
+  "dataset_id": "0Fbaj000001dE7NCAU",
+  "dataset_name": "Report Claims",
+  "record_id_field": "Name",
+  "saql_filter": "",
+  "selected_fields": [
+    "Clinical_Review__c",
+    "Clinical_Summary__c",
+    "Primary_Diagnosis__c",
+    "Expert_Review__c",
+    "Description__c"
+  ]
+}

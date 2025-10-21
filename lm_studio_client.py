@@ -44,11 +44,12 @@ class LMStudioClient:
 
     def generate(self, prompt: str) -> str:
         """Generate completion using configured provider"""
-        if self.provider == 'lmstudio':
+        provider = self.provider.replace('_', '')  # Handle both lm_studio and lmstudio
+        if provider in ['lmstudio']:
             return self._generate_lmstudio(prompt)
-        elif self.provider == 'openai':
+        elif provider == 'openai':
             return self._generate_openai(prompt)
-        elif self.provider == 'copilot':
+        elif provider == 'copilot':
             return self._generate_copilot(prompt)
         else:
             raise Exception(f"Unknown provider: {self.provider}")
@@ -58,11 +59,12 @@ class LMStudioClient:
         temp = temperature if temperature is not None else self.temperature
         tokens = max_tokens if max_tokens is not None else self.max_tokens
 
-        if self.provider == 'lmstudio':
+        provider = self.provider.replace('_', '')  # Handle both lm_studio and lmstudio
+        if provider in ['lmstudio']:
             return self._generate_lmstudio_chat(messages, temp, tokens)
-        elif self.provider == 'openai':
+        elif provider == 'openai':
             return self._generate_openai_chat(messages, temp, tokens)
-        elif self.provider == 'copilot':
+        elif provider == 'copilot':
             return self._generate_copilot_chat(messages, temp, tokens)
         else:
             raise Exception(f"Unknown provider: {self.provider}")
@@ -185,7 +187,8 @@ class LMStudioClient:
         payload = {
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"}  # Force JSON output
         }
 
         try:

@@ -1,5 +1,134 @@
 # Development Notes - Clinical Genius
 
+## Latest Update: Multiple Dataset Management (October 21, 2025)
+
+### Major Changes: Dataset Configuration Refactoring
+
+#### 1. Datasets Tab - Complete Redesign
+**Previous Implementation**: Single dataset configuration stored in JSON file
+**New Implementation**: Multiple dataset configurations stored in SQLite database
+
+- **Dataset List View**: Table displaying all configured datasets with:
+  - Dataset name (user-friendly identifier)
+  - CRM Analytics dataset name
+  - Record ID field
+  - Number of selected fields
+  - SAQL filter status (applied/none)
+  - Edit and Delete action buttons
+
+- **Create/Edit Modal**: Full-featured modal dialog for dataset configuration:
+  - Dataset Name: Custom user-provided name
+  - CRM Analytics Dataset: Dropdown of available datasets (sorted alphabetically)
+  - Record ID Field: Dropdown populated from selected dataset fields
+  - SAQL Filter: Optional filter with "Test Filter" validation button
+  - Field Selection: Searchable checkbox list with select all/deselect all
+  - All modal interactions properly isolated from main page state
+
+- **CRUD Operations**:
+  - Create: Click "New Dataset" button to open modal
+  - Read: List automatically loads on page load
+  - Update: Click "Edit" button to open modal with pre-populated values
+  - Delete: Click "Delete" button with confirmation dialog
+
+#### 2. Database Schema Updates
+Added new `dataset_configs` table to SQLite database:
+```sql
+CREATE TABLE dataset_configs (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    crm_dataset_id TEXT NOT NULL,
+    crm_dataset_name TEXT NOT NULL,
+    record_id_field TEXT NOT NULL,
+    saql_filter TEXT,
+    selected_fields TEXT NOT NULL,  -- JSON array
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+```
+
+#### 3. API Endpoint Changes
+**Removed**:
+- `GET/POST /api/dataset-config` (single config file-based)
+
+**Added**:
+- `GET /api/dataset-configs` - List all dataset configurations
+- `POST /api/dataset-configs` - Create or update dataset configuration
+- `GET /api/dataset-configs/<id>` - Get specific configuration
+- `DELETE /api/dataset-configs/<id>` - Delete configuration
+
+**Retained**:
+- `POST /api/dataset-config/test-filter` - Test SAQL filter validation
+
+#### 4. Analysis Tab Updates
+- **Dataset Selection**: Changed from raw Salesforce datasets to configured datasets
+- **New Analysis Modal**: Dropdown now shows user-configured datasets from Datasets tab
+- **Validation**: Warns user if no datasets are configured before allowing analysis creation
+- **Integration**: Uses configured dataset's CRM dataset ID and name when creating batches
+
+#### 5. LLM Provider Fixes
+- **Provider Name Handling**: Fixed issue where `lm_studio` (with underscore) was not recognized
+  - Updated code to handle both `lm_studio` and `lmstudio` formats
+  - Strips underscores before provider comparison
+- **JSON Mode**: Added `response_format: {"type": "json_object"}` to LM Studio requests
+  - Forces model to return pure JSON without markdown or explanatory text
+  - Prevents issues with models adding commentary around JSON output
+
+### Technical Implementation Details
+
+#### Frontend (JavaScript)
+- **New Global Variables**:
+  - `datasetConfigs`: Array of all configured datasets
+  - `modalDatasetFields`: Fields for the modal (isolated from main page)
+  - `modalSelectedFields`: Selected fields in modal (isolated from main page)
+  - `currentEditingConfigId`: Tracks which config is being edited
+
+- **Modal State Management**: Completely separate state for modal vs main page
+  - Prevents interference between dataset configuration and other operations
+  - Modal fields reload from API when editing existing configuration
+
+- **Dynamic Dropdown Population**:
+  - Analysis modal populates with configured datasets on open
+  - Dataset config modal populates with CRM datasets on open
+  - Record ID dropdown populates when dataset is selected
+
+#### Backend (Python)
+- **SQLite Integration**: All dataset configs stored in database for persistence
+- **JSON Field Storage**: `selected_fields` stored as JSON string, parsed on retrieval
+- **Atomic Operations**: Each config operation (create/update/delete) is atomic
+
+### Migration Path
+**From**: Single `dataset_config.json` file
+**To**: SQLite `dataset_configs` table
+
+Users with existing `dataset_config.json` will need to:
+1. Go to Datasets tab
+2. Click "New Dataset"
+3. Re-configure their dataset using the modal
+4. Old file can be safely deleted
+
+### User Workflow Changes
+
+**Previous Workflow**:
+1. Configure single dataset in Datasets tab
+2. Create analysis using that dataset
+3. To use different dataset, reconfigure Datasets tab
+
+**New Workflow**:
+1. Configure multiple datasets in Datasets tab (create once, use many times)
+2. Create analysis by selecting from configured datasets
+3. Each analysis can use different configured dataset
+4. Edit/delete dataset configurations as needed
+
+### Benefits of New Approach
+- **Multiple Datasets**: Manage many dataset configurations simultaneously
+- **Reusability**: Configure once, use in multiple analyses
+- **Organization**: Named datasets easier to identify than raw CRM dataset IDs
+- **Consistency**: Field selections and filters stored with dataset configuration
+- **Flexibility**: Quickly switch between different dataset configurations
+- **Persistence**: SQLite storage more robust than JSON files
+
+---
+
 ## Major Update: CRM Analytics Prompt Execution Application (October 20, 2025)
 
 ### Application Restructured

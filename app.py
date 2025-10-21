@@ -13,6 +13,7 @@ import csv
 import io
 import threading
 import time
+import re
 from dotenv import load_dotenv
 from salesforce_client import SalesforceClient
 from lm_studio_client import LMStudioClient
@@ -31,6 +32,39 @@ prompt_engine = PromptEngine()
 
 # Global state for batch executions (in-memory for now)
 batch_executions = {}
+
+def extract_json_from_llm_response(response: str) -> str:
+    """
+    Extract JSON from LLM response, handling special tokens and extra text.
+
+    Handles:
+    - Special tokens like <|end|>, <|start|>, <|channel|>, <|message|>
+    - Markdown code blocks (```json ... ```)
+    - Extra explanatory text before/after JSON
+
+    Returns cleaned JSON string ready for parsing.
+    """
+    # Remove special tokens (e.g., <|end|>, <|start|>, <|channel|>, <|message|>)
+    clean_response = re.sub(r'<\|[^|]+\|>', '', response)
+
+    # Remove markdown code blocks
+    clean_response = clean_response.strip()
+    if '```' in clean_response:
+        lines = clean_response.split('\n')
+        clean_response = '\n'.join(lines[1:-1]) if len(lines) > 2 else clean_response
+        clean_response = clean_response.replace('```json', '').replace('```', '').strip()
+
+    # Try to find JSON object - search from end for last occurrence of {...}
+    # This regex finds properly nested JSON objects
+    json_pattern = r'\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}'
+    matches = list(re.finditer(json_pattern, clean_response))
+
+    if matches:
+        # Return the last match (most likely to be the actual JSON response)
+        return matches[-1].group()
+
+    # If no JSON found, return cleaned response as-is
+    return clean_response.strip()
 
 def get_sf_client():
     """Get or create Salesforce client with authentication"""
@@ -340,14 +374,212 @@ def query_dataset(dataset_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# Dataset Configuration API endpoints (using SQLite)
+@app.route('/api/dataset-configs', methods=['GET', 'POST'])
+def dataset_configs():
+    """Get all dataset configurations or create a new one"""
+    if request.method == 'GET':
+        try:
+            conn = sqlite3.connect('analysis_batches.db')
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute('SELECT * FROM dataset_configs ORDER BY created_at DESC')
+            rows = c.fetchall()
+            conn.close()
+
+            configs = []
+            for row in rows:
+                config = dict(row)
+                config['selected_fields'] = json.loads(config['selected_fields'])
+                configs.append(config)
+
+            return jsonify({'success': True, 'configs': configs})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    elif request.method == 'POST':
+        try:
+            data = request.json
+
+            # Validate required fields
+            if not data.get('name'):
+                return jsonify({'success': False, 'error': 'Dataset name is required'}), 400
+            if not data.get('crm_dataset_id'):
+                return jsonify({'success': False, 'error': 'CRM dataset ID is required'}), 400
+            if not data.get('record_id_field'):
+                return jsonify({'success': False, 'error': 'Record ID field is required'}), 400
+            if not data.get('selected_fields'):
+                return jsonify({'success': False, 'error': 'At least one field must be selected'}), 400
+
+            config_id = data.get('id', str(uuid.uuid4()))
+            now = datetime.utcnow().isoformat()
+
+            conn = sqlite3.connect('analysis_batches.db')
+            c = conn.cursor()
+
+            # Check if updating existing config
+            if data.get('id'):
+                c.execute('''
+                    UPDATE dataset_configs
+                    SET name=?, crm_dataset_id=?, crm_dataset_name=?, record_id_field=?,
+                        saql_filter=?, selected_fields=?, updated_at=?
+                    WHERE id=?
+                ''', (
+                    data['name'],
+                    data['crm_dataset_id'],
+                    data.get('crm_dataset_name', ''),
+                    data['record_id_field'],
+                    data.get('saql_filter', ''),
+                    json.dumps(data['selected_fields']),
+                    now,
+                    config_id
+                ))
+            else:
+                c.execute('''
+                    INSERT INTO dataset_configs
+                    (id, name, crm_dataset_id, crm_dataset_name, record_id_field,
+                     saql_filter, selected_fields, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    config_id,
+                    data['name'],
+                    data['crm_dataset_id'],
+                    data.get('crm_dataset_name', ''),
+                    data['record_id_field'],
+                    data.get('saql_filter', ''),
+                    json.dumps(data['selected_fields']),
+                    now,
+                    now
+                ))
+
+            conn.commit()
+            conn.close()
+
+            return jsonify({'success': True, 'id': config_id, 'message': 'Dataset configuration saved successfully'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/dataset-configs/<config_id>', methods=['GET', 'DELETE'])
+def dataset_config_detail(config_id):
+    """Get or delete a specific dataset configuration"""
+    if request.method == 'GET':
+        try:
+            conn = sqlite3.connect('analysis_batches.db')
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute('SELECT * FROM dataset_configs WHERE id=?', (config_id,))
+            row = c.fetchone()
+            conn.close()
+
+            if row:
+                config = dict(row)
+                config['selected_fields'] = json.loads(config['selected_fields'])
+                return jsonify({'success': True, 'config': config})
+            else:
+                return jsonify({'success': False, 'error': 'Dataset configuration not found'}), 404
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    elif request.method == 'DELETE':
+        try:
+            conn = sqlite3.connect('analysis_batches.db')
+            c = conn.cursor()
+            c.execute('DELETE FROM dataset_configs WHERE id=?', (config_id,))
+            conn.commit()
+            conn.close()
+
+            return jsonify({'success': True, 'message': 'Dataset configuration deleted successfully'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/dataset-config/test-filter', methods=['POST'])
+def test_saql_filter():
+    """Test a SAQL filter to validate syntax"""
+    try:
+        data = request.json
+        dataset_id = data.get('dataset_id')
+        saql_filter = data.get('saql_filter', '').strip()
+
+        if not dataset_id:
+            return jsonify({'success': False, 'error': 'Dataset ID is required'}), 400
+
+        client = get_sf_client()
+
+        # Get dataset info to retrieve currentVersionId
+        dataset_url = f"{client.instance_url}/services/data/{client.api_version}/wave/datasets/{dataset_id}"
+        dataset_response = requests.get(dataset_url, headers=client._get_headers())
+        dataset_response.raise_for_status()
+        dataset_data = dataset_response.json()
+
+        version_id = dataset_data.get('currentVersionId')
+        if not version_id:
+            return jsonify({'success': False, 'error': 'Could not find dataset version'}), 400
+
+        # Build SAQL query with filter
+        saql = f'q = load "{dataset_id}/{version_id}";'
+        if saql_filter:
+            saql += f'\n{saql_filter}'
+        saql += '\nq = limit q 1;'  # Only get 1 record to test
+
+        # Execute query
+        url = f"{client.instance_url}/services/data/{client.api_version}/wave/query"
+        response = requests.post(url, headers=client._get_headers(), json={'query': saql})
+
+        if not response.ok:
+            error_detail = response.text
+            try:
+                error_json = response.json()
+                if 'message' in error_json:
+                    error_detail = error_json['message']
+            except:
+                pass
+            return jsonify({'success': False, 'error': error_detail})
+
+        # Get record count from response
+        result_data = response.json()
+        record_count = 0
+        if 'results' in result_data and 'records' in result_data['results']:
+            record_count = len(result_data['results']['records'])
+
+        return jsonify({
+            'success': True,
+            'record_count': record_count,
+            'message': 'Filter is valid'
+        })
+
+    except requests.exceptions.HTTPError as e:
+        error_msg = str(e)
+        if e.response is not None:
+            try:
+                error_data = e.response.json()
+                error_msg = error_data.get('message', str(e))
+            except:
+                error_msg = e.response.text
+        return jsonify({'success': False, 'error': error_msg}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # Analysis Batch API endpoints (using SQLite for local storage)
 import sqlite3
 from datetime import datetime
 
 def init_db():
-    """Initialize SQLite database for analysis batches"""
+    """Initialize SQLite database for analysis batches and dataset configurations"""
     conn = sqlite3.connect('analysis_batches.db')
     c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS dataset_configs (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            crm_dataset_id TEXT NOT NULL,
+            crm_dataset_name TEXT NOT NULL,
+            record_id_field TEXT NOT NULL,
+            saql_filter TEXT,
+            selected_fields TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS batches (
             id TEXT PRIMARY KEY,
@@ -760,12 +992,8 @@ Return ONLY the JSON schema, nothing else. Use descriptive field names and appro
             # Clean up the response to extract just the JSON
             schema_text = response.strip()
 
-            # Remove markdown code blocks if present
-            if schema_text.startswith('```'):
-                # Remove first line (```json or ```)
-                lines = schema_text.split('\n')
-                schema_text = '\n'.join(lines[1:-1]) if len(lines) > 2 else schema_text
-                schema_text = schema_text.replace('```json', '').replace('```', '').strip()
+            # Extract JSON from LLM response (handles special tokens and markdown)
+            schema_text = extract_json_from_llm_response(schema_text)
 
             # Validate that it's valid JSON
             json.loads(schema_text)
@@ -897,13 +1125,8 @@ def execute_proving_ground():
 
                 # Try to parse JSON response
                 try:
-                    # Clean up response - remove markdown if present
-                    clean_response = model_response.strip()
-                    if clean_response.startswith('```'):
-                        lines = clean_response.split('\n')
-                        clean_response = '\n'.join(lines[1:-1]) if len(lines) > 2 else clean_response
-                        clean_response = clean_response.replace('```json', '').replace('```', '').strip()
-
+                    # Extract JSON from LLM response (handles special tokens and markdown)
+                    clean_response = extract_json_from_llm_response(model_response)
                     response_json = json.loads(clean_response)
                 except json.JSONDecodeError:
                     # If not valid JSON, use raw text
@@ -1121,12 +1344,8 @@ def run_batch_execution(execution_id, batch_id):
 
                 # Parse JSON response
                 try:
-                    clean_response = model_response.strip()
-                    if clean_response.startswith('```'):
-                        lines = clean_response.split('\n')
-                        clean_response = '\n'.join(lines[1:-1]) if len(lines) > 2 else clean_response
-                        clean_response = clean_response.replace('```json', '').replace('```', '').strip()
-
+                    # Extract JSON from LLM response (handles special tokens and markdown)
+                    clean_response = extract_json_from_llm_response(model_response)
                     response_json = json.loads(clean_response)
                     success_count += 1
                 except json.JSONDecodeError:
