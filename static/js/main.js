@@ -1265,17 +1265,22 @@ async function runProvingGroundPrompt() {
         return;
     }
 
-    // Get comma-delimited claim names
+    // Get record IDs (supports comma, tab, space, newline delimiters)
     const claimNamesText = document.getElementById('proving-claim-names').value.trim();
     if (!claimNamesText) {
-        showAlert('warning', 'Please enter at least one claim name');
+        showAlert('warning', 'Please enter at least one record ID');
         return;
     }
 
-    // Parse comma-delimited names
-    const claimNames = claimNamesText.split(',').map(name => name.trim()).filter(name => name.length > 0);
+    // Parse with multiple delimiters: comma, tab, newline, or space
+    // Split by any combination of these delimiters
+    const claimNames = claimNamesText
+        .split(/[\s,\t\n]+/)  // Split on whitespace, comma, tab, or newline
+        .map(name => name.trim())
+        .filter(name => name.length > 0);
+
     if (claimNames.length === 0) {
-        showAlert('warning', 'No valid claim names found');
+        showAlert('warning', 'No valid record IDs found');
         return;
     }
 

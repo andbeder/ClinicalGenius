@@ -14,6 +14,7 @@ import io
 import threading
 import time
 import re
+import requests
 from dotenv import load_dotenv
 from salesforce_client import SalesforceClient
 from lm_studio_client import LMStudioClient
@@ -532,6 +533,9 @@ def test_saql_filter():
         saql = f'q = load "{dataset_id}/{version_id}";'
         if saql_filter:
             saql += f'\n{saql_filter}'
+        # Add simple SAQL after filter to test syntax
+        saql += '\nq = group q by all;'
+        saql += '\nq = foreach q generate "Test" as test;'
         saql += '\nq = limit q 1;'  # Only get 1 record to test
 
         # Execute query

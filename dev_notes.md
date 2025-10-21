@@ -1,8 +1,8 @@
 # Development Notes - Clinical Genius
 
-## Latest Update: Prompt Builder Field Filtering (October 21, 2025)
+## Latest Update: Prompt Builder & Proving Ground Improvements (October 21, 2025)
 
-### Fixed: Prompt Builder Now Shows Only Selected Fields
+### 1. Fixed: Prompt Builder Now Shows Only Selected Fields
 
 **Problem**: Prompt Builder was displaying all fields from the CRM Analytics dataset, not just the fields selected in the dataset configuration.
 
@@ -45,6 +45,48 @@ def get_batch_fields(batch_id):
 - Cleaner prompt builder interface with only relevant fields
 - Consistency between dataset configuration and prompt building
 - Reduces confusion when working with datasets that have many fields
+
+### 2. Enhanced: Proving Ground Record ID Input
+
+**Problem**: Proving Ground only accepted comma-delimited record IDs, making it difficult to paste from Excel.
+
+**Solution**: Updated input parsing to accept multiple delimiter types.
+
+**Changes Made**:
+
+1. **Frontend UI** (`main.html`):
+   - Updated label and placeholder text to indicate multiple delimiter support
+   - Changed card title from "Claim Names" to "Record IDs" (more generic)
+   - Increased textarea rows from 3 to 5 for better visibility
+   - Added help text: "You can paste directly from Excel"
+
+2. **JavaScript Parsing** (`main.js`):
+   - Updated regex to split on comma, tab, space, or newline: `/[\s,\t\n]+/`
+   - Handles any combination of delimiters
+   - Trims whitespace from each value
+   - Filters out empty values
+
+**Supported Input Formats**:
+```
+Comma-separated:     Claim-001, Claim-002, Claim-003
+Space-separated:     Claim-001 Claim-002 Claim-003
+Tab-separated:       Claim-001	Claim-002	Claim-003
+Newline-separated:   Claim-001
+                     Claim-002
+                     Claim-003
+Mixed:               Claim-001, Claim-002
+                     Claim-003	Claim-004 Claim-005
+```
+
+**Excel Copy/Paste**:
+- Copy single column: Works (newline-delimited)
+- Copy single row: Works (tab-delimited)
+- Copy from multiple cells: Works (mixed tab/newline)
+
+**Benefits**:
+- Seamless Excel integration
+- Flexible input format
+- No need to manually reformat data before pasting
 
 ---
 

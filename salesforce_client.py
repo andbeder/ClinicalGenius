@@ -273,13 +273,16 @@ class SalesforceClient:
                 if filter_conditions:
                     saql += f'\nq = filter q by {" && ".join(filter_conditions)};'
 
-            # Add projection - if fields provided
+            # Add projection - always need foreach before limit in SAQL
             if fields:
                 # Don't quote field names in foreach generate
                 fields_str = ', '.join(fields)
                 saql += f'\nq = foreach q generate {fields_str};'
+            else:
+                # If no specific fields, select all with foreach
+                saql += f'\nq = foreach q generate q;'
 
-            # Add limit
+            # Add limit (must come after foreach)
             saql += f'\nq = limit q {limit};'
 
             print(f"Executing SAQL query:\n{saql}")
