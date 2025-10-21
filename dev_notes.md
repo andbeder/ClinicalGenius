@@ -88,6 +88,41 @@ Mixed:               Claim-001, Claim-002
 - Flexible input format
 - No need to manually reformat data before pasting
 
+### 3. Optimized: Query Only Fields Used in Prompt Template
+
+**Problem**: Proving Ground and Batch Execution were querying ALL fields from the dataset, even if the prompt only used a few fields.
+
+**Solution**: Extract field names from prompt template using `{{field_name}}` syntax and only query those fields.
+
+**Changes Made**:
+
+1. **Proving Ground Execution** (`app.py:1176-1187`):
+   - Extract template fields using `PromptEngine.extract_variables()`
+   - Add common identifier fields (Name, Id) to ensure record filtering works
+   - Query only the extracted fields instead of all fields
+
+2. **Batch Execution** (`app.py:1422-1433`):
+   - Same optimization as Proving Ground
+   - Reduces query payload size
+   - Faster execution for large datasets
+
+**Example**:
+```python
+# Prompt template:
+"Analyze claim {{ClaimNumber}} with diagnosis {{Diagnosis}}"
+
+# Before: Query 50+ fields
+# After: Query only ['ClaimNumber', 'Diagnosis', 'Name', 'Id']
+```
+
+**Benefits**:
+- Faster query execution (smaller SAQL payload)
+- Reduced network bandwidth
+- Better performance with datasets that have many fields
+- Only retrieves data that's actually used
+
+**Note**: Preview execution already had this optimization (lines 937-958).
+
 ---
 
 ## Previous Update: LLM Response Parsing & Preview Enhancements (October 21, 2025)

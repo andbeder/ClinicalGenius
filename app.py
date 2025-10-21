@@ -1173,12 +1173,28 @@ def execute_proving_ground():
         # Get Salesforce client
         client = get_sf_client()
 
-        # Get all fields from dataset
-        fields_data = client.get_dataset_fields(batch['dataset_id'])
-        field_names = [f['name'] for f in fields_data]
+        # Extract fields used in the prompt template
+        prompt_engine = PromptEngine()
+        template_fields = prompt_engine.extract_variables(prompt_config['template'])
 
-        # Query all records (we'll filter by name)
-        all_records = client.query_dataset(batch['dataset_id'], field_names, limit=1000)
+        # Get all available fields from dataset to validate
+        fields_data = client.get_dataset_fields(batch['dataset_id'])
+        available_field_names = [f['name'] for f in fields_data]
+
+        # Start with template fields that exist in dataset
+        query_fields = [f for f in template_fields if f in available_field_names]
+
+        # Add common ID/Name fields if they exist
+        for field in ['Name', 'Title', 'Id', 'RecordId', 'ClaimNumber']:
+            if field in available_field_names and field not in query_fields:
+                query_fields.append(field)
+
+        print(f"Template fields: {template_fields}")
+        print(f"Available fields: {available_field_names[:20]}")
+        print(f"Query fields: {query_fields}")
+
+        # Query records with only the fields we need
+        all_records = client.query_dataset(batch['dataset_id'], query_fields, limit=1000)
 
         print(f"Searching for claim names: {claim_names}")
         print(f"Retrieved {len(all_records)} records from dataset")
@@ -1413,12 +1429,28 @@ def run_batch_execution(execution_id, batch_id):
         # Get Salesforce client
         client = get_sf_client()
 
-        # Get all fields from dataset
-        fields_data = client.get_dataset_fields(batch['dataset_id'])
-        field_names = [f['name'] for f in fields_data]
+        # Extract fields used in the prompt template
+        prompt_engine = PromptEngine()
+        template_fields = prompt_engine.extract_variables(prompt_config['template'])
 
-        # Query all records
-        all_records = client.query_dataset(batch['dataset_id'], field_names, limit=10000)
+        # Get all available fields from dataset to validate
+        fields_data = client.get_dataset_fields(batch['dataset_id'])
+        available_field_names = [f['name'] for f in fields_data]
+
+        # Start with template fields that exist in dataset
+        query_fields = [f for f in template_fields if f in available_field_names]
+
+        # Add common ID/Name fields if they exist
+        for field in ['Name', 'Title', 'Id', 'RecordId', 'ClaimNumber']:
+            if field in available_field_names and field not in query_fields:
+                query_fields.append(field)
+
+        print(f"Batch execution - Template fields: {template_fields}")
+        print(f"Batch execution - Available fields: {available_field_names[:20]}")
+        print(f"Batch execution - Query fields: {query_fields}")
+
+        # Query records with only the fields we need
+        all_records = client.query_dataset(batch['dataset_id'], query_fields, limit=10000)
 
         execution['total'] = len(all_records)
         execution['status'] = f'Processing {len(all_records)} records...'
