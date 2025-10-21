@@ -1216,7 +1216,7 @@ def execute_proving_ground():
             return jsonify({'success': False, 'error': 'Dataset configuration not found. Please configure the dataset first.'}), 404
 
         record_id_field = dataset_config['record_id_field']
-        saql_filter = dataset_config.get('saql_filter', '')  # Get SAQL filter from dataset config
+        saql_filter = dataset_config['saql_filter'] if dataset_config['saql_filter'] else ''  # Get SAQL filter from dataset config
 
         # Extract fields used in the prompt template
         prompt_engine = PromptEngine()
