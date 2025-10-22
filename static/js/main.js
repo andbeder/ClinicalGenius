@@ -1641,6 +1641,24 @@ async function executeBatch() {
         return;
     }
 
+    // Get optional record IDs filter
+    const recordIdsText = document.getElementById('batch-exec-record-ids').value.trim();
+    let recordIds = null;
+
+    if (recordIdsText) {
+        // Parse record IDs (support newline, comma, tab, space)
+        recordIds = recordIdsText
+            .split(/[\s,\t\n]+/)
+            .map(id => id.trim())
+            .filter(id => id.length > 0);
+
+        if (recordIds.length === 0) {
+            recordIds = null;  // Empty after filtering, treat as "all records"
+        } else {
+            console.log(`Executing batch with ${recordIds.length} filtered record IDs`);
+        }
+    }
+
     // Hide previous results/errors
     document.getElementById('batch-exec-results-section').style.display = 'none';
     document.getElementById('batch-exec-error-section').style.display = 'none';
@@ -1659,10 +1677,15 @@ async function executeBatch() {
 
     try {
         // Start batch execution
+        const requestBody = { batch_id: batchExecBatch.id };
+        if (recordIds) {
+            requestBody.record_ids = recordIds;
+        }
+
         const response = await fetch('/api/analysis/execute-batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ batch_id: batchExecBatch.id })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();

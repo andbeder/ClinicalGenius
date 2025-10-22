@@ -1339,9 +1339,18 @@ def execute_batch():
     try:
         data = request.json
         batch_id = data.get('batch_id')
+        record_ids = data.get('record_ids')  # Optional list of record IDs to filter
 
         if not batch_id:
             return jsonify({'success': False, 'error': 'Missing batch_id'}), 400
+
+        # Filter and clean record IDs if provided
+        if record_ids:
+            record_ids = [rid.strip() for rid in record_ids if rid and rid.strip()]
+            if not record_ids:
+                record_ids = None  # Empty after filtering, treat as "all records"
+            else:
+                print(f"Batch execution will filter to {len(record_ids)} specific record IDs")
 
         # Generate execution ID
         execution_id = str(uuid.uuid4())
@@ -1360,7 +1369,8 @@ def execute_batch():
             'csv_data': None,
             'success_count': 0,
             'error_count': 0,
-            'start_time': time.time()
+            'start_time': time.time(),
+            'record_ids': record_ids  # Store filtered IDs in execution state
         }
 
         # Persist initial status to database
@@ -1411,6 +1421,10 @@ def get_batch_status(batch_id):
         # First check if there's an active execution in memory
         for exec_id, execution in batch_executions.items():
             if execution.get('batch_id') == batch_id:
+                # Skip if execution is complete (should be removed from memory)
+                if execution.get('complete'):
+                    continue
+
                 duration = int(time.time() - execution['start_time'])
                 return jsonify({
                     'success': True,
@@ -1631,12 +1645,50 @@ def run_batch_execution(execution_id, batch_id):
             if field in available_field_names and field not in query_fields:
                 query_fields.append(field)
 
+        # Get SAQL filter from dataset configuration
+        saql_filter = ''
+        if batch['dataset_config_id']:
+            conn_temp = sqlite3.connect('analysis_batches.db')
+            c_temp = conn_temp.cursor()
+            c_temp.execute('SELECT saql_filter FROM dataset_configs WHERE id = ?', (batch['dataset_config_id'],))
+            filter_row = c_temp.fetchone()
+            conn_temp.close()
+            if filter_row and filter_row[0]:
+                saql_filter = filter_row[0]
+
+        # Ensure record ID field is in query fields
+        if record_id_field and record_id_field not in query_fields:
+            query_fields.append(record_id_field)
+
         print(f"Batch execution - Template fields: {template_fields}")
         print(f"Batch execution - Available fields: {available_field_names[:20]}")
         print(f"Batch execution - Query fields: {query_fields}")
+        print(f"Batch execution - Record ID field: {record_id_field}")
+        print(f"Batch execution - SAQL filter: {saql_filter}")
 
-        # Query records with only the fields we need
-        all_records = client.query_dataset(batch['dataset_id'], query_fields, limit=10000)
+        # Check if we have filtered record IDs
+        filtered_record_ids = execution.get('record_ids')
+
+        if filtered_record_ids:
+            # Query only the specified records using filters
+            print(f"Batch execution - Filtering to {len(filtered_record_ids)} specific record IDs")
+            filters = {record_id_field: filtered_record_ids} if record_id_field else None
+            all_records = client.query_dataset(
+                batch['dataset_id'],
+                query_fields,
+                limit=len(filtered_record_ids),
+                filters=filters,
+                saql_filter=saql_filter
+            )
+        else:
+            # Query all records (up to limit)
+            print(f"Batch execution - Querying all records (no filter)")
+            all_records = client.query_dataset(
+                batch['dataset_id'],
+                query_fields,
+                limit=10000,
+                saql_filter=saql_filter
+            )
 
         execution['total'] = len(all_records)
         execution['status'] = f'Processing {len(all_records)} records...'
@@ -1711,7 +1763,7 @@ def run_batch_execution(execution_id, batch_id):
 
         # Generate structured CSV with dataset name and batch name
         execution['status'] = 'Generating CSV...'
-        csv_data = generate_structured_csv(results, batch['dataset_name'], batch['name'])
+        csv_data = generate_structured_csv(results, batch['dataset_name'], batch['name'], record_id_field)
         csv_filename = f"batch_{batch['name']}_{execution_id[:8]}.csv"
 
         # Save to execution history
@@ -1760,6 +1812,17 @@ def run_batch_execution(execution_id, batch_id):
         execution['status'] = 'Complete'
         persist_execution_status(batch_id, execution)
 
+        # Clean up from memory after a delay (allow final status check)
+        def cleanup_execution():
+            time.sleep(30)  # Wait 30 seconds before cleanup
+            if execution_id in batch_executions:
+                print(f"Cleaning up completed execution {execution_id} from memory")
+                del batch_executions[execution_id]
+
+        cleanup_thread = threading.Thread(target=cleanup_execution)
+        cleanup_thread.daemon = True
+        cleanup_thread.start()
+
     except Exception as e:
         print(f"Error in batch execution: {str(e)}")
         import traceback
@@ -1768,6 +1831,17 @@ def run_batch_execution(execution_id, batch_id):
         execution['success'] = False
         execution['error'] = str(e)
         persist_execution_status(batch_id, execution)
+
+        # Clean up from memory after a delay (even on error)
+        def cleanup_execution():
+            time.sleep(30)  # Wait 30 seconds before cleanup
+            if execution_id in batch_executions:
+                print(f"Cleaning up failed execution {execution_id} from memory")
+                del batch_executions[execution_id]
+
+        cleanup_thread = threading.Thread(target=cleanup_execution)
+        cleanup_thread.daemon = True
+        cleanup_thread.start()
 
 def flatten_nested_dict(obj, parent_key='', sep='.'):
     """
@@ -1802,12 +1876,18 @@ def flatten_nested_dict(obj, parent_key='', sep='.'):
 
     return dict(items)
 
-def generate_structured_csv(results, dataset_name='', batch_name=''):
+def generate_structured_csv(results, dataset_name='', batch_name='', record_id_field='Record ID'):
     """
     Generate CSV in wide format: one row per record, one column per response field
     Format: Record ID, [response fields as columns]
     Nested objects are flattened with dot notation (e.g., surgeryRelatedDetails.primaryProcedure)
     This allows direct joins to analytical datasets
+
+    Args:
+        results: List of result dictionaries with 'record_id' and 'response'
+        dataset_name: Name of the dataset (unused, kept for compatibility)
+        batch_name: Name of the batch (unused, kept for compatibility)
+        record_id_field: Name of the record ID field (e.g., 'Name', 'ClaimNumber')
     """
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1843,8 +1923,9 @@ def generate_structured_csv(results, dataset_name='', batch_name=''):
     # Sort fields for consistent column order
     sorted_fields = sorted(all_fields)
 
-    # Write header: Record ID + all response fields
-    header = ['Record ID'] + sorted_fields
+    # Write header: Use actual record ID field name instead of generic "Record ID"
+    record_id_header = record_id_field if record_id_field else 'Record ID'
+    header = [record_id_header] + sorted_fields
     writer.writerow(header)
 
     # Write data rows

@@ -1,6 +1,72 @@
 # Development Notes - Clinical Genius
 
-## Latest Update: Apply Dataset SAQL Filter to Proving Ground (October 21, 2025)
+## Latest Update: Optional Record ID Filter for Batch Execution (October 22, 2025)
+
+### Feature
+Added ability to filter Batch Execution to specific record IDs, similar to Proving Ground. This allows testing batches on small subsets before running the full dataset.
+
+**Use Cases:**
+- Test batch configuration on 5-10 records before processing 10,000+ records
+- Re-run batch on specific records that had errors
+- Process only high-priority records first
+- Debug prompt issues with known test records
+
+### Implementation
+
+**1. UI Update (templates/main.html:447-460)**
+- Added textarea for optional record IDs
+- Supports same delimiters as Proving Ground (newline, comma, tab, space)
+- Clear placeholder showing it's optional
+- Help text: "Use this to test your batch on a small subset"
+
+**2. Frontend (static/js/main.js:1644-1689)**
+```javascript
+// Parse and send record IDs to backend
+const recordIdsText = document.getElementById('batch-exec-record-ids').value.trim();
+let recordIds = null;
+
+if (recordIdsText) {
+    recordIds = recordIdsText
+        .split(/[\s,\t\n]+/)
+        .map(id => id.trim())
+        .filter(id => id.length > 0);
+}
+
+const requestBody = { batch_id: batchExecBatch.id };
+if (recordIds) {
+    requestBody.record_ids = recordIds;
+}
+```
+
+**3. Backend (app.py:1342-1373, 1669-1691)**
+- Accept optional `record_ids` parameter in `/api/analysis/execute-batch`
+- Store in execution state for background thread
+- Use SAQL `in` filter when IDs provided
+- Fall back to full dataset query when empty
+
+**Behavior:**
+- **With IDs:** Query only specified records using `'Name' in ["REC-001", "REC-002"]`
+- **Without IDs:** Query all records up to 10,000 limit
+- **Always:** Apply dataset SAQL filter from configuration
+
+**Example SAQL (with filter):**
+```saql
+q = load "dataset_id/version_id";
+q = filter q by 'Environment' == "Production";     # Dataset config filter
+q = filter q by 'Name' in ["REC-001", "REC-002"];  # User-specified IDs
+q = foreach q generate Name, Status, Amount;
+q = limit q 2;
+```
+
+**Result:**
+- ✅ Test batches on small subsets before full run
+- ✅ Save time and LLM API costs during development
+- ✅ Same filtering logic as Proving Ground
+- ✅ Dataset filters always applied
+
+---
+
+## Previous Update: Apply Dataset SAQL Filter to Proving Ground (October 21, 2025)
 
 ### Issue
 Proving Ground was not applying the dataset's SAQL filter when querying records by ID. This caused problems in datasets with duplicate record IDs across different filtered subsets (e.g., Test vs Production data in same dataset).

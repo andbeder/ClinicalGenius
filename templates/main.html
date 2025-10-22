@@ -444,6 +444,21 @@ I need a response that includes:
                                     </div>
                                 </div>
 
+                                <div class="mt-3">
+                                    <label for="batch-exec-record-ids" class="form-label">
+                                        <strong>Filter by Record IDs (Optional)</strong>
+                                        <small class="text-muted">- Leave empty to process all records</small>
+                                    </label>
+                                    <textarea
+                                        id="batch-exec-record-ids"
+                                        class="form-control"
+                                        rows="6"
+                                        placeholder="Enter record IDs to filter (one per line, or comma/tab separated)&#10;Example:&#10;REC-001&#10;REC-002&#10;REC-003&#10;&#10;Leave empty to run on entire dataset"></textarea>
+                                    <small class="form-text text-muted">
+                                        Use this to test your batch on a small subset before running the full dataset.
+                                    </small>
+                                </div>
+
                                 <div class="text-center mt-3">
                                     <button id="batch-exec-run-btn" class="btn btn-success btn-lg" disabled>
                                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-play-fill me-2" viewBox="0 0 16 16">
