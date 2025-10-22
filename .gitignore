@@ -77,3 +77,10 @@ build/
 # Documentation build
 docs/_build/
 site/
+
+# HIPAA Compliance / Security
+.encryption_key
+*.backup.*
+config/network_security.sh
+config/nginx_clinical_genius.conf
+config/setup_nginx.sh

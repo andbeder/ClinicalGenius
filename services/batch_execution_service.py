@@ -9,6 +9,7 @@ from database.db import get_connection
 from utils.json_utils import extract_json_from_llm_response
 from utils.csv_utils import generate_structured_csv
 from prompt_engine import PromptEngine
+from audit_logger import get_audit_logger, AuditLogger
 
 
 # Global state for batch executions (in-memory for now)
@@ -331,6 +332,21 @@ def run_batch_execution(execution_id, batch_id, sf_client, lm_client, settings_l
         execution['status'] = 'Complete'
         persist_execution_status(batch_id, execution)
 
+        # Audit log successful execution
+        audit_logger = get_audit_logger()
+        audit_logger.log_batch_execution(
+            batch_id=batch_id,
+            batch_name=batch['name'],
+            dataset_id=batch['dataset_id'],
+            record_count=execution['total'],
+            success=True,
+            metadata={
+                'success_count': execution.get('success_count', 0),
+                'error_count': execution.get('error_count', 0),
+                'execution_time': time.time() - execution['start_time']
+            }
+        )
+
         # Clean up from memory after a delay (allow final status check)
         def cleanup_execution():
             time.sleep(30)  # Wait 30 seconds before cleanup
@@ -350,6 +366,17 @@ def run_batch_execution(execution_id, batch_id, sf_client, lm_client, settings_l
         execution['success'] = False
         execution['error'] = str(e)
         persist_execution_status(batch_id, execution)
+
+        # Audit log failed execution
+        audit_logger = get_audit_logger()
+        audit_logger.log_batch_execution(
+            batch_id=batch_id,
+            batch_name=batch['name'] if 'batch' in locals() else 'Unknown',
+            dataset_id=batch['dataset_id'] if 'batch' in locals() else None,
+            record_count=execution.get('total', 0),
+            success=False,
+            error_message=str(e)
+        )
 
         # Clean up from memory after a delay (even on error)
         def cleanup_execution():

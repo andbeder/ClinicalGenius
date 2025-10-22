@@ -131,29 +131,160 @@ def get_record(record_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# NOTE: The following routes (test-prompt, batch-generate, create-record, lm-studio/config)
-# would be fully implemented here by copying from app.py lines 212-352
-# For now, providing stubs to demonstrate the structure
-
 @synthetic_bp.route('/api/test-prompt', methods=['POST'])
 def test_prompt():
-    """Test prompt on a single record - to be migrated"""
-    return jsonify({'success': False, 'error': 'Not yet implemented'}), 501
+    """Test prompt on a single record"""
+    try:
+        from prompt_engine import PromptEngine
+
+        data = request.json
+        record_id = data.get('record_id')
+        prompt_template = data.get('prompt_template')
+        target_field = data.get('target_field')
+
+        if not all([record_id, prompt_template]):
+            return jsonify({'success': False, 'error': 'Missing required parameters'}), 400
+
+        # Get the record
+        sf_client = get_sf_client_func()
+        record = sf_client.get_record(record_id)
+
+        # Build the prompt
+        prompt_engine = PromptEngine()
+        prompt = prompt_engine.build_prompt(prompt_template, record)
+
+        # Generate completion
+        lm_client = get_lm_client_func()
+        completion = lm_client.generate(prompt)
+
+        return jsonify({
+            'success': True,
+            'prompt': prompt,
+            'completion': completion,
+            'record': record
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @synthetic_bp.route('/api/batch-generate', methods=['POST'])
 def batch_generate():
-    """Batch generate synthetic data - to be migrated"""
-    return jsonify({'success': False, 'error': 'Not yet implemented'}), 501
+    """Run batch generation - either update existing or create new records"""
+    try:
+        from prompt_engine import PromptEngine
+
+        data = request.json
+        prompt_template = data.get('prompt_template')
+        target_field = data.get('target_field')
+        mode = data.get('mode', 'update')  # 'update' or 'insert'
+        insert_count = data.get('insert_count', 10)
+
+        if not all([prompt_template, target_field]):
+            return jsonify({'success': False, 'error': 'Missing required parameters'}), 400
+
+        sf_client = get_sf_client_func()
+        lm_client = get_lm_client_func()
+        prompt_engine = PromptEngine()
+
+        results = {
+            'total': 0,
+            'success': 0,
+            'failed': 0,
+            'errors': []
+        }
+
+        if mode == 'update':
+            # Update existing records
+            records = sf_client.get_all_records()
+            results['total'] = len(records)
+
+            for i, record in enumerate(records):
+                try:
+                    # Build prompt
+                    prompt = prompt_engine.build_prompt(prompt_template, record)
+
+                    # Generate completion
+                    completion = lm_client.generate(prompt)
+
+                    # Update Salesforce
+                    sf_client.update_record(record['Id'], {target_field: completion})
+
+                    results['success'] += 1
+                    print(f"Updated {i+1}/{len(records)}: {record['Id']}")
+
+                except Exception as e:
+                    results['failed'] += 1
+                    results['errors'].append({
+                        'record_id': record['Id'],
+                        'error': str(e)
+                    })
+                    print(f"Error updating {record['Id']}: {str(e)}")
+
+        elif mode == 'insert':
+            # Create new records
+            results['total'] = insert_count
+
+            for i in range(insert_count):
+                try:
+                    # For new records, we'll use an empty record as context
+                    # The prompt should be written to not depend on existing field values
+                    empty_record = {'Id': f'NEW_{i+1}'}
+
+                    # Build prompt
+                    prompt = prompt_engine.build_prompt(prompt_template, empty_record)
+
+                    # Generate completion
+                    completion = lm_client.generate(prompt)
+
+                    # Create new Salesforce record with generated content
+                    record_id = sf_client.create_record({target_field: completion})
+
+                    results['success'] += 1
+                    print(f"Created {i+1}/{insert_count}: {record_id}")
+
+                except Exception as e:
+                    results['failed'] += 1
+                    results['errors'].append({
+                        'record_number': i + 1,
+                        'error': str(e)
+                    })
+                    print(f"Error creating record {i+1}: {str(e)}")
+
+        return jsonify({'success': True, 'results': results})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @synthetic_bp.route('/api/create-record', methods=['POST'])
 def create_record():
-    """Create a new Claim__c record - to be migrated"""
-    return jsonify({'success': False, 'error': 'Not yet implemented'}), 501
+    """Create a new empty Claim__c record"""
+    try:
+        data = request.json or {}
+        sf_client = get_sf_client_func()
+        record_id = sf_client.create_record(data)
+        return jsonify({'success': True, 'record_id': record_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @synthetic_bp.route('/api/lm-studio/config', methods=['GET', 'POST'])
 def lm_studio_config():
-    """Get or update LM Studio configuration - to be migrated"""
-    return jsonify({'success': False, 'error': 'Not yet implemented'}), 501
+    """Get or update LM Studio configuration"""
+    if request.method == 'GET':
+        try:
+            lm_client = get_lm_client_func()
+            return jsonify({
+                'success': True,
+                'config': lm_client.get_config()
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+    else:
+        try:
+            data = request.json
+            lm_client = get_lm_client_func()
+            lm_client.update_config(data)
+            return jsonify({'success': True, 'message': 'Configuration updated'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500

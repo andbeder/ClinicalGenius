@@ -2,14 +2,25 @@
 Database initialization and management for Clinical Genius application
 """
 import sqlite3
+import os
 
 
 DB_NAME = 'analysis_batches.db'
+USE_ENCRYPTION = os.getenv('DB_ENCRYPTION', 'true').lower() == 'true'
 
 
 def get_connection():
-    """Get a database connection"""
-    return sqlite3.connect(DB_NAME)
+    """Get a database connection (encrypted if encryption is enabled)"""
+    if USE_ENCRYPTION:
+        try:
+            from database.encryption import get_encrypted_connection
+            return get_encrypted_connection(DB_NAME)
+        except Exception as e:
+            print(f"[WARNING] Failed to get encrypted connection: {e}")
+            print("[WARNING] Falling back to unencrypted connection")
+            return sqlite3.connect(DB_NAME)
+    else:
+        return sqlite3.connect(DB_NAME)
 
 
 def init_db():
@@ -26,6 +37,7 @@ def init_db():
             record_id_field TEXT NOT NULL,
             saql_filter TEXT,
             selected_fields TEXT NOT NULL,
+            picklist_fields TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
@@ -105,13 +117,22 @@ def migrate_db():
     conn = get_connection()
     c = conn.cursor()
 
-    # Check if dataset_config_id column exists
+    # Check if dataset_config_id column exists in batches
     c.execute("PRAGMA table_info(batches)")
     columns = [col[1] for col in c.fetchall()]
 
     if 'dataset_config_id' not in columns:
         print("Running migration: Adding dataset_config_id column to batches table")
         c.execute('ALTER TABLE batches ADD COLUMN dataset_config_id TEXT')
+        conn.commit()
+
+    # Check if picklist_fields column exists in dataset_configs
+    c.execute("PRAGMA table_info(dataset_configs)")
+    config_columns = [col[1] for col in c.fetchall()]
+
+    if 'picklist_fields' not in config_columns:
+        print("Running migration: Adding picklist_fields column to dataset_configs table")
+        c.execute('ALTER TABLE dataset_configs ADD COLUMN picklist_fields TEXT')
         conn.commit()
 
     conn.close()

@@ -8,10 +8,12 @@ let currentBatch = null;
 let datasetFields = [];
 let modalDatasetFields = []; // Fields for the modal
 let modalSelectedFields = []; // Fields selected in the modal
+let modalPicklistFields = []; // Picklist fields selected in the modal
 let selectedFields = []; // Fields selected in the Datasets tab
 let datasetConfigs = []; // All dataset configurations
 let datasetConfig = null; // Configured dataset from Datasets tab
 let currentEditingConfigId = null; // ID of config being edited
+let picklistFieldValues = {}; // Cache of picklist field distinct values
 let promptConfig = {
     template: '',
     responseSchema: {},
@@ -68,6 +70,11 @@ function setupEventListeners() {
     // Dataset Modal - Field search
     document.getElementById('modal-field-search').addEventListener('input', function() {
         filterModalFieldList(this.value);
+    });
+
+    // Dataset Modal - Picklist field search
+    document.getElementById('modal-picklist-search').addEventListener('input', function() {
+        filterModalPicklistList(this.value);
     });
 
     // Dataset Modal - Select all fields
@@ -326,11 +333,13 @@ function displayDatasetConfigs() {
 
     datasetConfigs.forEach(config => {
         const row = document.createElement('tr');
+        const picklistCount = (config.picklist_fields && config.picklist_fields.length) || 0;
         row.innerHTML = `
             <td>${config.name}</td>
             <td>${config.crm_dataset_name || config.crm_dataset_id}</td>
             <td>${config.record_id_field}</td>
             <td>${config.selected_fields.length} field(s)</td>
+            <td>${picklistCount > 0 ? `${picklistCount} field(s)` : '<span class="text-muted">None</span>'}</td>
             <td>${config.saql_filter ? '<span class="badge bg-info">Applied</span>' : '<span class="badge bg-secondary">None</span>'}</td>
             <td>
                 <button class="btn btn-sm btn-primary me-1" onclick="editDatasetConfig('${config.id}')">
@@ -355,6 +364,7 @@ function displayDatasetConfigs() {
 function showDatasetConfigModal(configId = null) {
     currentEditingConfigId = configId;
     modalSelectedFields = [];
+    modalPicklistFields = [];
     modalDatasetFields = [];
 
     const modal = new bootstrap.Modal(document.getElementById('datasetConfigModal'));
@@ -399,8 +409,19 @@ function clearModalForm() {
     document.getElementById('modal-record-id-field').innerHTML = '<option value="">-- Select dataset first --</option>';
     document.getElementById('modal-saql-filter').value = '';
     document.getElementById('modal-filter-test-result').style.display = 'none';
-    document.getElementById('modal-field-selection-list').innerHTML = '<p class="text-muted small">Select a dataset to see available fields</p>';
+
+    const fieldList = document.getElementById('modal-field-selection-list');
+    if (fieldList) {
+        fieldList.innerHTML = '<p class="text-muted small">Select a dataset to see available fields</p>';
+    }
+
+    const picklistList = document.getElementById('modal-picklist-selection-list');
+    if (picklistList) {
+        picklistList.innerHTML = '<p class="text-muted small">Select a dataset to see available fields</p>';
+    }
+
     modalSelectedFields = [];
+    modalPicklistFields = [];
     modalDatasetFields = [];
 }
 
@@ -416,6 +437,7 @@ async function loadConfigIntoModal(configId) {
             document.getElementById('modal-crm-dataset-select').value = config.crm_dataset_id;
             document.getElementById('modal-saql-filter').value = config.saql_filter || '';
             modalSelectedFields = config.selected_fields;
+            modalPicklistFields = config.picklist_fields || [];
 
             // Load fields for the selected dataset
             await handleModalDatasetSelection(config.crm_dataset_id);
@@ -430,8 +452,16 @@ async function loadConfigIntoModal(configId) {
 async function handleModalDatasetSelection(datasetId) {
     if (!datasetId) {
         document.getElementById('modal-record-id-field').innerHTML = '<option value="">-- Select dataset first --</option>';
-        document.getElementById('modal-field-selection-list').innerHTML = '<p class="text-muted small">Select a dataset to see available fields</p>';
+        const fieldList = document.getElementById('modal-field-selection-list');
+        if (fieldList) {
+            fieldList.innerHTML = '<p class="text-muted small">Select a dataset to see available fields</p>';
+        }
+        const picklistList = document.getElementById('modal-picklist-selection-list');
+        if (picklistList) {
+            picklistList.innerHTML = '<p class="text-muted small">Select a dataset to see available fields</p>';
+        }
         modalDatasetFields = [];
+        modalPicklistFields = [];
         return;
     }
 
@@ -443,6 +473,7 @@ async function handleModalDatasetSelection(datasetId) {
             modalDatasetFields = data.fields;
             populateModalRecordIdFieldDropdown();
             populateModalFieldSelectionList();
+            populateModalPicklistFieldList();
         } else {
             showAlert('danger', 'Failed to load dataset fields: ' + data.error);
         }
@@ -505,8 +536,73 @@ function populateModalFieldSelectionList() {
     });
 }
 
+function populateModalPicklistFieldList() {
+    const container = document.getElementById('modal-picklist-selection-list');
+
+    // Safety check
+    if (!container) {
+        console.error('modal-picklist-selection-list element not found');
+        return;
+    }
+
+    container.innerHTML = '';
+
+    // Only show dimension fields (text fields) for picklist selection
+    const dimensionFields = modalDatasetFields.filter(f => f.type === 'dimension');
+    const sortedFields = [...dimensionFields].sort((a, b) => a.name.localeCompare(b.name));
+
+    if (sortedFields.length === 0) {
+        container.innerHTML = '<p class="text-muted small">No dimension fields available</p>';
+        return;
+    }
+
+    sortedFields.forEach(field => {
+        const div = document.createElement('div');
+        div.className = 'form-check';
+        div.dataset.fieldName = field.name;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'form-check-input modal-picklist-checkbox';
+        checkbox.id = `modal-picklist-${field.name}`;
+        checkbox.value = field.name;
+        checkbox.checked = modalPicklistFields.includes(field.name);
+
+        checkbox.addEventListener('change', function() {
+            if (this.checked) {
+                if (!modalPicklistFields.includes(field.name)) {
+                    modalPicklistFields.push(field.name);
+                }
+            } else {
+                modalPicklistFields = modalPicklistFields.filter(f => f !== field.name);
+            }
+        });
+
+        const label = document.createElement('label');
+        label.className = 'form-check-label';
+        label.htmlFor = `modal-picklist-${field.name}`;
+        label.textContent = `${field.label || field.name} (${field.name})`;
+
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        container.appendChild(div);
+    });
+}
+
 function filterModalFieldList(searchTerm) {
     const container = document.getElementById('modal-field-selection-list');
+    const fieldDivs = container.querySelectorAll('.form-check');
+
+    const lowerSearch = searchTerm.toLowerCase();
+
+    fieldDivs.forEach(div => {
+        const label = div.querySelector('label').textContent.toLowerCase();
+        div.style.display = label.includes(lowerSearch) ? 'block' : 'none';
+    });
+}
+
+function filterModalPicklistList(searchTerm) {
+    const container = document.getElementById('modal-picklist-selection-list');
     const fieldDivs = container.querySelectorAll('.form-check');
 
     const lowerSearch = searchTerm.toLowerCase();
@@ -615,7 +711,8 @@ async function saveDatasetConfigModal() {
         crm_dataset_name: crmDatasetName,
         record_id_field: recordIdField,
         saql_filter: saqlFilter,
-        selected_fields: modalSelectedFields
+        selected_fields: modalSelectedFields,
+        picklist_fields: modalPicklistFields
     };
 
     if (currentEditingConfigId) {
@@ -924,7 +1021,18 @@ async function loadDatasetFieldsForPrompt(batchId) {
 
         if (data.success) {
             datasetFields = data.fields;
-            displayDatasetFields(data.fields);
+
+            // Get picklist fields from batch's dataset config
+            const batch = batches.find(b => b.id === batchId);
+            const picklistFieldNames = [];
+            if (batch && batch.dataset_config_id) {
+                const config = datasetConfigs.find(c => c.id === batch.dataset_config_id);
+                if (config && config.picklist_fields) {
+                    picklistFieldNames.push(...config.picklist_fields);
+                }
+            }
+
+            displayDatasetFields(data.fields, picklistFieldNames, batch);
         } else {
             showAlert('danger', 'Failed to load dataset fields: ' + data.error);
             document.getElementById('dataset-fields-loading').style.display = 'none';
@@ -936,25 +1044,46 @@ async function loadDatasetFieldsForPrompt(batchId) {
     }
 }
 
-function displayDatasetFields(fields) {
+function displayDatasetFields(fields, picklistFieldNames = [], batch = null) {
     document.getElementById('dataset-fields-loading').style.display = 'none';
     document.getElementById('dataset-fields-container').style.display = 'block';
 
     const dimensionsContainer = document.getElementById('dimension-fields');
-    const measuresContainer = document.getElementById('measure-fields');
+    const picklistContainer = document.getElementById('picklist-fields');
+    const noPicklistMsg = document.getElementById('no-picklist-fields');
+
+    // Safety check - make sure all elements exist
+    if (!dimensionsContainer || !picklistContainer || !noPicklistMsg) {
+        console.error('Missing required HTML elements for dataset fields display');
+        return;
+    }
 
     dimensionsContainer.innerHTML = '';
-    measuresContainer.innerHTML = '';
+    picklistContainer.innerHTML = '';
 
-    fields.forEach(field => {
+    // Separate fields into dimensions and picklists
+    const dimensionFields = fields.filter(f => f.type === 'dimension' && !picklistFieldNames.includes(f.name));
+    const picklistFields = fields.filter(f => picklistFieldNames.includes(f.name));
+
+    // Display dimension fields
+    dimensionFields.forEach(field => {
         const fieldItem = createFieldItem(field);
-
-        if (field.type === 'dimension') {
-            dimensionsContainer.appendChild(fieldItem);
-        } else {
-            measuresContainer.appendChild(fieldItem);
-        }
+        dimensionsContainer.appendChild(fieldItem);
     });
+
+    // Display picklist fields
+    if (picklistFields.length > 0) {
+        picklistContainer.style.display = 'block';
+        noPicklistMsg.style.display = 'none';
+
+        picklistFields.forEach(field => {
+            const fieldItem = createPicklistFieldItem(field, batch);
+            picklistContainer.appendChild(fieldItem);
+        });
+    } else {
+        picklistContainer.style.display = 'none';
+        noPicklistMsg.style.display = 'block';
+    }
 }
 
 function createFieldItem(field) {
@@ -975,6 +1104,24 @@ function createFieldItem(field) {
     return item;
 }
 
+function createPicklistFieldItem(field, batch) {
+    const item = document.createElement('div');
+    item.className = 'field-item';
+    item.innerHTML = `
+        <div>
+            <div class="field-item-label">${escapeHtml(field.label)}</div>
+            <div class="field-item-name">{{${field.name}}} <span class="badge bg-info">picklist</span></div>
+        </div>
+        <span class="field-item-type ${field.type}">${field.type}</span>
+    `;
+
+    item.addEventListener('click', async function() {
+        await insertPicklistIntoPrompt(field.name, batch);
+    });
+
+    return item;
+}
+
 function insertFieldIntoPrompt(fieldName) {
     const textarea = document.getElementById('prompt-template');
     const cursorPos = textarea.selectionStart;
@@ -989,6 +1136,66 @@ function insertFieldIntoPrompt(fieldName) {
     textarea.focus();
 
     showAlert('success', `Inserted {{${fieldName}}} into prompt`);
+}
+
+async function insertPicklistIntoPrompt(fieldName, batch) {
+    // Check cache first
+    const cacheKey = `${batch.dataset_id}_${fieldName}`;
+    if (picklistFieldValues[cacheKey]) {
+        insertPicklistValues(fieldName, picklistFieldValues[cacheKey]);
+        return;
+    }
+
+    // Fetch distinct values
+    try {
+        showAlert('info', `Fetching distinct values for ${fieldName}...`);
+
+        // Get dataset config for SAQL filter
+        const config = datasetConfigs.find(c => c.id === batch.dataset_config_id);
+        const saqlFilter = config ? config.saql_filter : '';
+
+        const response = await fetch(`/api/crm-analytics/datasets/${batch.dataset_id}/distinct-values`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                field_name: fieldName,
+                saql_filter: saqlFilter
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Cache the values
+            picklistFieldValues[cacheKey] = data.values;
+            insertPicklistValues(fieldName, data.values);
+        } else {
+            showAlert('danger', `Failed to fetch values: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error fetching picklist values:', error);
+        showAlert('danger', `Error: ${error.message}`);
+    }
+}
+
+function insertPicklistValues(fieldName, values) {
+    const textarea = document.getElementById('prompt-template');
+    const cursorPos = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, cursorPos);
+    const textAfter = textarea.value.substring(textarea.selectionEnd);
+
+    // Concatenate values with | separator
+    const picklistText = values.join(' | ');
+    const insertText = `{{${fieldName}}}` + (picklistText ? ` | ${picklistText}` : '');
+
+    textarea.value = textBefore + insertText + textAfter;
+
+    // Move cursor after inserted text
+    const newCursorPos = cursorPos + insertText.length;
+    textarea.setSelectionRange(newCursorPos, newCursorPos);
+    textarea.focus();
+
+    showAlert('success', `Inserted picklist with ${values.length} values`);
 }
 
 async function savePromptConfiguration() {

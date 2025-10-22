@@ -15,6 +15,7 @@ from services.batch_execution_service import batch_executions, run_batch_executi
 from services.schema_service import generate_schema_from_description
 from utils.json_utils import extract_json_from_llm_response
 from prompt_engine import PromptEngine
+from audit_logger import get_audit_logger, AuditLogger
 
 
 analysis_bp = Blueprint('analysis', __name__)

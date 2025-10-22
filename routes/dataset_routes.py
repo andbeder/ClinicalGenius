@@ -80,6 +80,7 @@ def dataset_configs():
             for row in rows:
                 config = dict(row)
                 config['selected_fields'] = json.loads(config['selected_fields'])
+                config['picklist_fields'] = json.loads(config.get('picklist_fields') or '[]')
                 configs.append(config)
 
             return jsonify({'success': True, 'configs': configs})
@@ -111,7 +112,7 @@ def dataset_configs():
                 c.execute('''
                     UPDATE dataset_configs
                     SET name=?, crm_dataset_id=?, crm_dataset_name=?, record_id_field=?,
-                        saql_filter=?, selected_fields=?, updated_at=?
+                        saql_filter=?, selected_fields=?, picklist_fields=?, updated_at=?
                     WHERE id=?
                 ''', (
                     data['name'],
@@ -120,6 +121,7 @@ def dataset_configs():
                     data['record_id_field'],
                     data.get('saql_filter', ''),
                     json.dumps(data['selected_fields']),
+                    json.dumps(data.get('picklist_fields', [])),
                     now,
                     config_id
                 ))
@@ -127,8 +129,8 @@ def dataset_configs():
                 c.execute('''
                     INSERT INTO dataset_configs
                     (id, name, crm_dataset_id, crm_dataset_name, record_id_field,
-                     saql_filter, selected_fields, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     saql_filter, selected_fields, picklist_fields, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     config_id,
                     data['name'],
@@ -137,6 +139,7 @@ def dataset_configs():
                     data['record_id_field'],
                     data.get('saql_filter', ''),
                     json.dumps(data['selected_fields']),
+                    json.dumps(data.get('picklist_fields', [])),
                     now,
                     now
                 ))
@@ -164,6 +167,7 @@ def dataset_config_detail(config_id):
             if row:
                 config = dict(row)
                 config['selected_fields'] = json.loads(config['selected_fields'])
+                config['picklist_fields'] = json.loads(config.get('picklist_fields') or '[]')
                 return jsonify({'success': True, 'config': config})
             else:
                 return jsonify({'success': False, 'error': 'Dataset configuration not found'}), 404
@@ -239,6 +243,91 @@ def test_saql_filter():
             'success': True,
             'record_count': record_count,
             'message': 'Filter is valid'
+        })
+
+    except requests.exceptions.HTTPError as e:
+        error_msg = str(e)
+        try:
+            error_json = e.response.json()
+            if 'message' in error_json:
+                error_msg = error_json['message']
+        except:
+            pass
+        return jsonify({'success': False, 'error': error_msg}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@dataset_bp.route('/api/crm-analytics/datasets/<dataset_id>/distinct-values', methods=['POST'])
+def get_distinct_values(dataset_id):
+    """Get distinct values for a field in a CRM Analytics dataset"""
+    try:
+        data = request.json
+        field_name = data.get('field_name')
+        saql_filter = data.get('saql_filter', '').strip()
+
+        if not field_name:
+            return jsonify({'success': False, 'error': 'Field name is required'}), 400
+
+        client = get_sf_client_func()
+
+        # Get dataset info to retrieve currentVersionId
+        dataset_url = f"{client.instance_url}/services/data/{client.api_version}/wave/datasets/{dataset_id}"
+        dataset_response = requests.get(dataset_url, headers=client._get_headers())
+        dataset_response.raise_for_status()
+        dataset_data = dataset_response.json()
+
+        version_id = dataset_data.get('currentVersionId')
+        if not version_id:
+            return jsonify({'success': False, 'error': 'Could not find dataset version'}), 400
+
+        # Build SAQL query to get distinct values
+        saql = f'q = load "{dataset_id}/{version_id}";'
+
+        # Apply dataset filter if provided
+        if saql_filter:
+            saql += f'\n{saql_filter}'
+
+        # Group by the field to get distinct values
+        saql += f'\nq = group q by \'{field_name}\';'
+        saql += f'\nq = foreach q generate \'{field_name}\' as value;'
+        saql += '\nq = order q by value asc;'  # Sort alphabetically
+        saql += '\nq = limit q 10000;'  # Limit to prevent too many values
+
+        # Execute query
+        url = f"{client.instance_url}/services/data/{client.api_version}/wave/query"
+        response = requests.post(url, headers=client._get_headers(), json={'query': saql})
+
+        if not response.ok:
+            error_detail = response.text
+            try:
+                error_json = response.json()
+                if 'message' in error_json:
+                    error_detail = error_json['message']
+            except:
+                pass
+            return jsonify({'success': False, 'error': error_detail}), 400
+
+        # Extract distinct values from response
+        result_data = response.json()
+        distinct_values = []
+
+        if 'results' in result_data and 'records' in result_data['results']:
+            for record in result_data['results']['records']:
+                # CRM Analytics returns values in format {"value": actual_value}
+                if 'value' in record and record['value'] is not None:
+                    value = record['value']
+                    # Handle both direct values and wrapped values
+                    if isinstance(value, dict) and 'value' in value:
+                        value = value['value']
+                    # Convert to string and filter out empty/null
+                    if value is not None and str(value).strip():
+                        distinct_values.append(str(value))
+
+        return jsonify({
+            'success': True,
+            'values': distinct_values,
+            'count': len(distinct_values)
         })
 
     except requests.exceptions.HTTPError as e:

@@ -346,6 +346,19 @@ class SalesforceClient:
             else:
                 print(f"Unexpected response structure. Keys: {data.keys()}")
 
+            # Audit log PHI access
+            try:
+                from audit_logger import get_audit_logger
+                audit_logger = get_audit_logger()
+                audit_logger.log_phi_access(
+                    dataset_id=dataset_id,
+                    record_count=len(results),
+                    action="query",
+                    metadata={'fields': fields, 'limit': limit}
+                )
+            except Exception as audit_error:
+                print(f"Warning: Failed to log audit event: {audit_error}")
+
             return results
 
         except requests.exceptions.HTTPError as e:
