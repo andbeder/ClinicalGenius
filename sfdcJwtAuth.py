@@ -199,6 +199,10 @@ def authorize() -> dict:
             if result.returncode != 0:
                 raise Exception(f"sf org login jwt failed: {result.stderr}")
 
+            # Log warnings from stderr even on success (common with --set-default)
+            if result.stderr and result.stderr.strip():
+                print(f"ℹ️  SF CLI warning: {result.stderr.strip()}")
+
         finally:
             # Immediately clean up temporary key file
             if os.path.exists(temp_key_file):

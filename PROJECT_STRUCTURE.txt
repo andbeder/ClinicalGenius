@@ -1,0 +1,83 @@
+clinical-genius/
+├── 📄 app.py                          # Original (2,140 lines - BACKUP THIS)
+├── 📄 app_refactored.py               # New main app (102 lines) ✨
+│
+├── 📁 routes/                         # HTTP Endpoints (Blueprints)
+│   ├── __init__.py
+│   ├── analysis_routes.py             # 460 lines - Core application
+│   │   ├── /api/analysis/batches
+│   │   ├── /api/analysis/prompts
+│   │   ├── /api/analysis/execute-batch
+│   │   ├── /api/analysis/history
+│   │   └── ... (18 routes total)
+│   │
+│   ├── dataset_routes.py              # 250 lines - Dataset management
+│   │   ├── /api/crm-analytics/datasets
+│   │   ├── /api/dataset-configs
+│   │   └── ... (6 routes total)
+│   │
+│   └── synthetic_routes.py            # 143 lines - Legacy synthetic generator
+│       ├── /api/authenticate
+│       ├── /api/settings
+│       └── ... (12 routes total)
+│
+├── 📁 services/                       # Business Logic
+│   ├── __init__.py
+│   ├── batch_execution_service.py     # 363 lines - Batch processing engine
+│   │   ├── run_batch_execution()
+│   │   ├── persist_execution_status()
+│   │   └── upload_to_crm_analytics()
+│   │
+│   └── schema_service.py              # 67 lines - AI schema generation
+│       └── generate_schema_from_description()
+│
+├── 📁 utils/                          # Helper Functions
+│   ├── __init__.py
+│   ├── json_utils.py                  # 85 lines
+│   │   ├── extract_json_from_llm_response()
+│   │   └── flatten_nested_dict()
+│   │
+│   └── csv_utils.py                   # 83 lines
+│       └── generate_structured_csv()
+│
+├── 📁 database/                       # Data Layer
+│   ├── __init__.py
+│   └── db.py                          # 117 lines
+│       ├── get_connection()
+│       ├── init_db()
+│       └── migrate_db()
+│
+├── 📁 templates/                      # HTML Templates (unchanged)
+│   ├── main.html
+│   └── index.html
+│
+├── 📁 static/                         # Frontend Assets (unchanged)
+│   ├── css/
+│   └── js/
+│
+├── 📄 salesforce_client.py            # Existing (361 lines)
+├── 📄 lm_studio_client.py             # Existing (301 lines)
+├── 📄 prompt_engine.py                # Existing (104 lines)
+│
+├── 📄 analysis_batches.db             # SQLite database
+├── 📄 settings.json                   # App settings
+├── 📄 .env                            # Environment variables
+│
+├── 📄 REFACTORING_SUMMARY.md          # Detailed documentation ✨
+├── 📄 REFACTORING_RESULTS.txt         # Quick summary ✨
+├── 📄 PROJECT_STRUCTURE.txt           # This file ✨
+│
+└── 📄 requirements.txt                # Python dependencies
+
+METRICS:
+────────────────────────────────────────────────────
+Original app.py:        2,140 lines (81KB)
+Refactored app.py:        102 lines (2.8KB) - 96% reduction
+New modules:            1,670 lines across 12 files
+Total routes:                37 (all preserved)
+Database tables:              5 (unchanged)
+────────────────────────────────────────────────────
+
+✅ All functionality preserved
+✅ Backward compatible
+✅ No breaking changes
