@@ -2,3 +2,7 @@ Flask==3.0.0
 python-dotenv==1.0.0
 requests==2.31.0
 cryptography==41.0.7
+
+# Database Encryption - Install manually (see INSTALL_GUIDE.md)
+# The application works without encryption enabled for development
+# Set DB_ENCRYPTION=false in .env to skip encryption (dev only)

@@ -35,6 +35,9 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initializeApp() {
+    // Load current user info
+    loadCurrentUser();
+
     // Authenticate with Salesforce
     authenticateSalesforce();
 
@@ -46,6 +49,29 @@ function initializeApp() {
 
     // Load recent batches
     loadBatches();
+}
+
+function loadCurrentUser() {
+    fetch('/api/current-user')
+        .then(response => response.json())
+        .then(data => {
+            const userDisplay = document.getElementById('current-user-display');
+            if (data.authenticated) {
+                userDisplay.textContent = data.username;
+                userDisplay.className = 'badge bg-success';
+                userDisplay.title = data.source;
+            } else {
+                userDisplay.textContent = 'Not configured';
+                userDisplay.className = 'badge bg-warning';
+                userDisplay.title = 'Set SFDC_USERNAME in .env file';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading user info:', error);
+            const userDisplay = document.getElementById('current-user-display');
+            userDisplay.textContent = 'Error';
+            userDisplay.className = 'badge bg-danger';
+        });
 }
 
 function setupEventListeners() {

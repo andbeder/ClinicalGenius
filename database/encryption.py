@@ -135,13 +135,40 @@ def get_encrypted_connection(db_path='analysis_batches.db'):
     """
     Get SQLCipher encrypted database connection
 
+    Tries multiple SQLCipher libraries in order of preference:
+    1. sqlcipher3 (pre-compiled, Windows-friendly)
+    2. pysqlcipher3 (original, requires compilation)
+
     Args:
         db_path: Path to database file
 
     Returns:
         Connection: SQLCipher database connection
+
+    Raises:
+        ImportError: If no SQLCipher library is available
     """
-    import pysqlcipher3.dbapi2 as sqlcipher
+    sqlcipher = None
+    library_used = None
+
+    # Try multiple SQLCipher libraries (Windows-friendly first)
+    try:
+        import sqlcipher3.dbapi2 as sqlcipher
+        library_used = "sqlcipher3"
+    except ImportError:
+        try:
+            import pysqlcipher3.dbapi2 as sqlcipher
+            library_used = "pysqlcipher3"
+        except ImportError:
+            raise ImportError(
+                "No SQLCipher library found. Install one of:\n"
+                "  pip install sqlcipher3-binary  (Recommended for Windows)\n"
+                "  pip install sqlcipher3\n"
+                "  pip install pysqlcipher3\n"
+                "\n"
+                "Or disable encryption for development (no production PHI):\n"
+                "  Add DB_ENCRYPTION=false to .env"
+            )
 
     # Get encryption key
     key_manager = EncryptionKeyManager()

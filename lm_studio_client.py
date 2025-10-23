@@ -45,10 +45,13 @@ class LMStudioClient:
     def generate(self, prompt: str) -> str:
         """Generate completion using configured provider"""
         provider = self.provider.replace('_', '')  # Handle both lm_studio and lmstudio
+
+        # HIPAA Compliance: Block OpenAI - no BAA in place
+        if provider == 'openai':
+            raise Exception("OpenAI provider is disabled: No Business Associate Agreement (BAA) in place. Use LM Studio or Microsoft Copilot only.")
+
         if provider in ['lmstudio']:
             return self._generate_lmstudio(prompt)
-        elif provider == 'openai':
-            return self._generate_openai(prompt)
         elif provider == 'copilot':
             return self._generate_copilot(prompt)
         else:
@@ -60,10 +63,13 @@ class LMStudioClient:
         tokens = max_tokens if max_tokens is not None else self.max_tokens
 
         provider = self.provider.replace('_', '')  # Handle both lm_studio and lmstudio
+
+        # HIPAA Compliance: Block OpenAI - no BAA in place
+        if provider == 'openai':
+            raise Exception("OpenAI provider is disabled: No Business Associate Agreement (BAA) in place. Use LM Studio or Microsoft Copilot only.")
+
         if provider in ['lmstudio']:
             return self._generate_lmstudio_chat(messages, temp, tokens)
-        elif provider == 'openai':
-            return self._generate_openai_chat(messages, temp, tokens)
         elif provider == 'copilot':
             return self._generate_copilot_chat(messages, temp, tokens)
         else:

@@ -34,10 +34,13 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-i
 # Initialize audit logger
 audit_logger = get_audit_logger()
 
-# Network access control middleware
+# User context middleware
 @app.before_request
-def check_localhost_access():
-    """Restrict access to localhost only"""
+def set_user_context():
+    """
+    Set current user context for audit logging
+    Uses SFDC_USERNAME from environment as the authenticated user
+    """
     # Skip check for health endpoint
     if request.endpoint == 'health_check':
         return None
@@ -53,6 +56,67 @@ def check_localhost_access():
             ip_address=client_ip
         )
         abort(403, description="Access denied: Only localhost access is permitted")
+
+    # Set user context from SFDC_USERNAME for audit logging
+    # This satisfies HIPAA unique user identification requirement
+    from flask import g
+    g.current_user = os.environ.get('SFDC_USERNAME', 'unknown')
+    g.user_ip = client_ip
+
+
+# Security headers middleware
+@app.after_request
+def set_security_headers(response):
+    """
+    Add HIPAA-compliant security headers to all responses
+    Provides defense-in-depth protection
+    """
+    # HTTP Strict Transport Security (HSTS)
+    # Forces HTTPS for 1 year, includes subdomains
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+
+    # Prevent MIME type sniffing
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+
+    # Prevent clickjacking - don't allow embedding in frames
+    response.headers['X-Frame-Options'] = 'DENY'
+
+    # XSS Protection (legacy header, but still useful)
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+
+    # Content Security Policy
+    # Restrict resource loading to prevent XSS attacks
+    csp_policy = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "font-src 'self' https://cdn.jsdelivr.net; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    response.headers['Content-Security-Policy'] = csp_policy
+
+    # Referrer Policy - don't leak URLs to external sites
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+
+    # Permissions Policy (formerly Feature-Policy)
+    # Disable unnecessary browser features
+    permissions_policy = (
+        "geolocation=(), "
+        "microphone=(), "
+        "camera=(), "
+        "payment=(), "
+        "usb=(), "
+        "magnetometer=(), "
+        "gyroscope=(), "
+        "accelerometer=()"
+    )
+    response.headers['Permissions-Policy'] = permissions_policy
+
+    return response
 
 # Initialize clients
 sf_client = None
@@ -124,6 +188,18 @@ def health_check():
     return {'status': 'healthy', 'localhost_only': True}, 200
 
 
+@app.route('/api/current-user')
+def get_current_user():
+    """Get current user information for UI display"""
+    from flask import g, jsonify
+    user = getattr(g, 'current_user', 'unknown')
+    return jsonify({
+        'username': user,
+        'source': 'SFDC_USERNAME environment variable',
+        'authenticated': user != 'unknown'
+    })
+
+
 # Initialize database on startup
 init_db()
 migrate_db()
@@ -132,9 +208,30 @@ migrate_db()
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 4000))
     debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    use_https = os.environ.get('USE_HTTPS', 'True').lower() == 'true'
+
+    # SSL configuration
+    ssl_context = None
+    if use_https:
+        ssl_cert_path = 'ssl/localhost.crt'
+        ssl_key_path = 'ssl/localhost.key'
+
+        if os.path.exists(ssl_cert_path) and os.path.exists(ssl_key_path):
+            ssl_context = (ssl_cert_path, ssl_key_path)
+            protocol = 'https'
+            print("[SSL] SSL/TLS Enabled - Using self-signed certificate")
+        else:
+            print(f"[WARNING] SSL certificate not found at {ssl_cert_path}")
+            print(f"          Run: python generate_ssl_cert.py")
+            print(f"          Starting without HTTPS...")
+            protocol = 'http'
+    else:
+        protocol = 'http'
+        print("[WARNING] HTTPS disabled via USE_HTTPS=false in environment")
 
     print(f"Starting Clinical Genius on localhost:{port}")
+    print(f"Access URL: {protocol}://localhost:{port}")
     print(f"Access restricted to: localhost only (127.0.0.1)")
     print(f"Debug mode: {debug}")
 
-    app.run(host='127.0.0.1', port=port, debug=debug)
+    app.run(host='127.0.0.1', port=port, debug=debug, ssl_context=ssl_context)

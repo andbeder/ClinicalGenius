@@ -112,16 +112,34 @@ class AuditLogger:
         """
         timestamp = datetime.utcnow().isoformat() + 'Z'
 
-        # Get request context if available
+        # Get user from Flask request context (set by middleware)
+        user_id = kwargs.get('user_id')
+        if not user_id:
+            try:
+                user_id = g.current_user if hasattr(g, 'current_user') else 'system'
+            except RuntimeError:
+                # Outside request context
+                user_id = 'system'
+
+        # Get IP address from Flask request context
         ip_address = kwargs.get('ip_address')
-        if not ip_address and request:
-            ip_address = request.remote_addr
+        if not ip_address:
+            try:
+                ip_address = g.user_ip if hasattr(g, 'user_ip') else None
+            except RuntimeError:
+                # Outside request context
+                pass
+            if not ip_address and request:
+                try:
+                    ip_address = request.remote_addr
+                except RuntimeError:
+                    pass
 
         # Build audit entry
         entry = {
             'timestamp': timestamp,
             'event_type': event_type,
-            'user_id': kwargs.get('user_id', 'system'),
+            'user_id': user_id,
             'ip_address': ip_address,
             'action': action,
             'resource_type': kwargs.get('resource_type'),
